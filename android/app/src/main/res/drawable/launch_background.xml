@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Full-screen white background -->
+    <item android:drawable="@android:color/white" />
+
+    <!-- Centered logo -->
+    <item>
+        <bitmap
+            android:gravity="center"
+            android:src="@drawable/icon" />
+    </item>
+
+    <!-- Bottom text -->
+    <item>
+        <layer-list>
+            <item android:bottom="50dp">
+                <shape android:shape="rectangle">
+                    <solid android:color="@android:color/transparent" />
+                </shape>
+            </item>
+        </layer-list>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Solura Enterprise"
+            android:textSize="20sp"
+            android:textColor="#ffffff"
+            android:gravity="center"
+            android:layout_gravity="bottom|center"
+            android:paddingBottom="50dp"
+            android:fontFamily="sans-serif-medium"/>
+    </item>
+
+</layer-list>
