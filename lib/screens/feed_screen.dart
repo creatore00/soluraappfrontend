@@ -1,24 +1,3 @@
-// screens/feed_screen.dart
-//
-// ✅ Full rewrite (fixed) with:
-// - Heart icon always visible (no missing icon bug)
-// - Optimistic like toggle + rollback
-// - Comments bottom sheet:
-//   - Inline replying
-//   - Replies under parent
-//   - Emoji reactions toggle + refresh
-//   - Mentions via MentionTextField
-// - Poll voting works (tap option calls onVote)
-// - Poll "View votes" supported (optional) + no null-crashes
-// - Fix reply SnackBar message
-// - Composer listener so Send button updates immediately
-//
-// ✅ NEW (requested):
-// - 3 dots menu (top right of each post)
-// - Delete Post + Pin/Unpin Post (only for AM / Manager)
-// - Optimistic delete/pin + rollback if API fails
-// - Optional "Pinned" badge + pinned posts sorted on top
-
 import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';

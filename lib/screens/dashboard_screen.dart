@@ -20,6 +20,7 @@ import 'hours_summary_screen.dart';
 import 'login_screen.dart';
 import 'notifications_screen.dart';
 import 'shift_requests_screen.dart';
+import 'feed_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   final String email;
@@ -120,11 +121,19 @@ class _DashboardScreenState extends State<DashboardScreen>
   // -----------------------------
   // DB options + init
   // -----------------------------
-  List<DatabaseAccess> get _dbOptions {
-    if (widget.databases.isNotEmpty) return widget.databases;
-    if (Session.databases.isNotEmpty) return Session.databases;
-    return [currentDb];
-  }
+  // Replace the _dbOptions getter in _DashboardScreenState:
+
+List<DatabaseAccess> get _dbOptions {
+  // First check widget databases
+  if (widget.databases.isNotEmpty) return widget.databases;
+  
+  // Then check Session databases
+  if (Session.databases.isNotEmpty) return Session.databases;
+  
+  // If both are empty, create a list with just the current DB
+  // This ensures the workspace button still shows when there are multiple options
+  return [currentDb];
+}
 
   Future<void> _persistSelectedDb(DatabaseAccess db) async {
     Session.db = db.dbName;
@@ -217,8 +226,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         setState(() => _profileImageBytes = bytes);
       }
     } catch (e) {
-      // don’t spam user for image; silent or gentle message
-      // _showErrorSnack("Profile image error: $e");
+      // don't spam user for image; silent or gentle message
     }
   }
 
@@ -242,8 +250,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       if (!mounted) return;
       setState(() => unreadCount = count);
     } catch (e) {
-      // keep it clean: no red screens, just ignore or show once
-      // _showErrorSnack("Unread count error: $e");
+      // keep it clean: no red screens, just ignore
     } finally {
       if (mounted) setState(() => loadingUnread = false);
     }
@@ -267,6 +274,26 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
 
     await _loadUnreadCount();
+  }
+
+  // -----------------------------
+  // Feed
+  // -----------------------------
+  Future<void> _openFeed() async {
+    final String first = (employeeName ?? '').trim();
+    final String displayName = first.isNotEmpty ? first : 'User';
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => FeedScreen(
+          selectedDb: currentDb,
+          userEmail: widget.email,
+          userName: displayName,
+          userDesignation: (employeeDesignation ?? '').trim(),
+        ),
+      ),
+    );
   }
 
   // -----------------------------
@@ -488,7 +515,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       context: context,
       initialTime: initialTimeOfDay,
       builder: (context, child) {
-        if (child == null) return const SizedBox.shrink(); // ✅ avoids null crash
+        if (child == null) return const SizedBox.shrink();
         return MediaQuery(
           data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
           child: Theme(
@@ -524,7 +551,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   void _showEnterTimesDialog() {
     if (!_hasShiftToday()) {
       _showErrorSnack(
-          "You can’t edit today because no shift is scheduled. Contact your manager.");
+          "You can't edit today because no shift is scheduled. Contact your manager.");
       return;
     }
 
@@ -880,93 +907,93 @@ class _DashboardScreenState extends State<DashboardScreen>
   // Drawer + logout + settings
   // -----------------------------
   Future<void> _showDbPicker() async {
-    final options = _dbOptions;
-    if (options.length <= 1) return;
+  final options = _dbOptions; // This now uses the updated getter
+  if (options.length <= 1) return;
 
-    await showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF0A192F),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (_) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 46,
-                  height: 5,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(99),
-                  ),
+  await showModalBottomSheet(
+    context: context,
+    backgroundColor: const Color(0xFF0A192F),
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (_) {
+      return SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 46,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(99),
                 ),
-                const SizedBox(height: 14),
-                Row(
-                  children: [
-                    const Icon(Icons.apartment, color: Color(0xFF4CC9F0)),
-                    const SizedBox(width: 10),
-                    const Text(
-                      "Select workspace",
-                      style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold),
-                    ),
-                    const Spacer(),
-                    Text(
-                      currentDb.dbName,
-                      style: TextStyle(
-                          color: Colors.white.withOpacity(0.6), fontSize: 12),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                ...options.map((db) {
-                  final isSelected = db.dbName == currentDb.dbName;
-                  return ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: CircleAvatar(
-                      radius: 18,
-                      backgroundColor: isSelected
-                          ? const Color(0xFF4CC9F0)
-                          : Colors.white.withOpacity(0.10),
-                      child: Icon(
-                        isSelected ? Icons.check : Icons.storage,
-                        color: isSelected
-                            ? Colors.white
-                            : Colors.white.withOpacity(0.8),
-                        size: 18,
-                      ),
-                    ),
-                    title: Text(
-                      db.dbName,
-                      style: TextStyle(
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  const Icon(Icons.apartment, color: Color(0xFF4CC9F0)),
+                  const SizedBox(width: 10),
+                  const Text(
+                    "Select workspace",
+                    style: TextStyle(
                         color: Colors.white,
-                        fontWeight:
-                            isSelected ? FontWeight.bold : FontWeight.w500,
-                      ),
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold),
+                  ),
+                  const Spacer(),
+                  Text(
+                    currentDb.dbName,
+                    style: TextStyle(
+                        color: Colors.white.withOpacity(0.6), fontSize: 12),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              ...options.map((db) {
+                final isSelected = db.dbName == currentDb.dbName;
+                return ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: CircleAvatar(
+                    radius: 18,
+                    backgroundColor: isSelected
+                        ? const Color(0xFF4CC9F0)
+                        : Colors.white.withOpacity(0.10),
+                    child: Icon(
+                      isSelected ? Icons.check : Icons.storage,
+                      color: isSelected
+                          ? Colors.white
+                          : Colors.white.withOpacity(0.8),
+                      size: 18,
                     ),
-                    trailing: isSelected
-                        ? const Icon(Icons.verified, color: Color(0xFF4ADE80))
-                        : Icon(Icons.chevron_right,
-                            color: Colors.white.withOpacity(0.35)),
-                    onTap: () async {
-                      Navigator.pop(context);
-                      await switchDatabase(db);
-                    },
-                  );
-                }),
-              ],
-            ),
+                  ),
+                  title: Text(
+                    db.dbName,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight:
+                          isSelected ? FontWeight.bold : FontWeight.w500,
+                    ),
+                  ),
+                  trailing: isSelected
+                      ? const Icon(Icons.verified, color: Color(0xFF4ADE80))
+                      : Icon(Icons.chevron_right,
+                          color: Colors.white.withOpacity(0.35)),
+                  onTap: () async {
+                    Navigator.pop(context);
+                    await switchDatabase(db);
+                  },
+                );
+              }),
+            ],
           ),
-        );
-      },
-    );
-  }
+        ),
+      );
+    },
+  );
+}
 
   Future<void> _logout() async {
     try {
@@ -1010,7 +1037,7 @@ class _DashboardScreenState extends State<DashboardScreen>
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              "No shift scheduled today. You can’t edit schedule. Contact your manager.",
+              "No shift scheduled today. You can't edit schedule. Contact your manager.",
               style: TextStyle(color: Colors.white.withOpacity(0.75), fontSize: 13),
             ),
           ),
@@ -1094,7 +1121,7 @@ class _DashboardScreenState extends State<DashboardScreen>
           const SizedBox(height: 12),
           if (!hasShifts)
             Text(
-              "No shift scheduled. You can’t edit schedule.",
+              "No shift scheduled. You can't edit schedule.",
               style: TextStyle(color: Colors.white.withOpacity(0.70), fontSize: 14),
             )
           else
@@ -1238,8 +1265,9 @@ class _DashboardScreenState extends State<DashboardScreen>
             ],
           ),
           const SizedBox(height: 10),
+          // Table header with better spacing
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
             decoration: BoxDecoration(
               color: Colors.white.withOpacity(0.05),
               borderRadius: BorderRadius.circular(12),
@@ -1247,13 +1275,14 @@ class _DashboardScreenState extends State<DashboardScreen>
             ),
             child: Row(
               children: [
-                _headerCell("Day", flex: 6), // ✅ more space for day
-                _headerCell("Shifts", flex: 5),
-                _headerCell("Total", flex: 2, alignRight: true), // ✅ tighter total column
+                Expanded(flex: 5, child: _headerText("Day")),
+                Expanded(flex: 4, child: _headerText("Shifts")),
+                Expanded(flex: 2, child: _headerText("Total", align: TextAlign.right)),
               ],
             ),
           ),
           const SizedBox(height: 8),
+          // Table rows
           ...weekRota.map((row) {
             final isToday = row.dateStr == todayStr;
 
@@ -1269,60 +1298,58 @@ class _DashboardScreenState extends State<DashboardScreen>
                 shiftFrames.isEmpty ? "-" : _calcTotalText(shiftFrames);
 
             return Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              margin: const EdgeInsets.only(bottom: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
               decoration: BoxDecoration(
                 color: isToday
                     ? const Color(0xFF4CC9F0).withOpacity(0.10)
-                    : Colors.white.withOpacity(0.03),
-                borderRadius: BorderRadius.circular(12),
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(10),
                 border: Border.all(
                   color: isToday
                       ? const Color(0xFF4ADE80).withOpacity(0.35)
-                      : Colors.white.withOpacity(0.06),
+                      : Colors.white.withOpacity(0.03),
                 ),
               ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Day column
                   Expanded(
-                    flex: 6, // ✅ more space
+                    flex: 5,
                     child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         if (isToday)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Container(
-                              width: 8,
-                              height: 8,
-                              decoration: const BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: Color(0xFF4ADE80),
-                              ),
+                          Container(
+                            width: 8,
+                            height: 8,
+                            margin: const EdgeInsets.only(right: 6),
+                            decoration: const BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Color(0xFF4ADE80),
                             ),
                           ),
-                        if (isToday) const SizedBox(width: 8),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                row.dayName, // ✅ no substring, no cut
+                                row.dayName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                  color: Colors.white.withOpacity(0.92),
-                                  fontWeight: isToday
-                                      ? FontWeight.bold
-                                      : FontWeight.w700,
+                                  color: Colors.white,
+                                  fontWeight: isToday ? FontWeight.bold : FontWeight.normal,
+                                  fontSize: 14,
                                 ),
                               ),
-                              const SizedBox(height: 2),
                               Text(
                                 row.dateStr,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                  color: Colors.white.withOpacity(0.65),
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w500,
+                                  color: Colors.white.withOpacity(0.6),
+                                  fontSize: 11,
                                 ),
                               ),
                             ],
@@ -1331,36 +1358,37 @@ class _DashboardScreenState extends State<DashboardScreen>
                       ],
                     ),
                   ),
+                  // Shifts column
                   Expanded(
-                    flex: 5,
+                    flex: 4,
                     child: Padding(
-                      padding: const EdgeInsets.only(top: 1),
+                      padding: const EdgeInsets.only(left: 4),
                       child: Text(
                         shiftsText,
-                        maxLines: 3,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: shiftFrames.isEmpty
-                              ? Colors.white.withOpacity(0.45)
-                              : Colors.white.withOpacity(0.85),
-                          fontWeight:
-                              isToday ? FontWeight.w600 : FontWeight.w500,
+                              ? Colors.white.withOpacity(0.4)
+                              : Colors.white.withOpacity(0.9),
+                          fontSize: 13,
+                          fontWeight: isToday ? FontWeight.w500 : FontWeight.normal,
                         ),
                       ),
                     ),
                   ),
+                  // Total column
                   Expanded(
-                    flex: 1, // ✅ less gap between shifts and total
-                    child: Align(
-                      alignment: Alignment.topRight,
-                      child: Text(
-                        totalText,
-                        style: TextStyle(
-                          color: isToday
-                              ? const Color(0xFF4ADE80)
-                              : Colors.white.withOpacity(0.80),
-                          fontWeight: FontWeight.bold,
-                        ),
+                    flex: 2,
+                    child: Text(
+                      totalText,
+                      textAlign: TextAlign.right,
+                      style: TextStyle(
+                        color: isToday
+                            ? const Color(0xFF4ADE80)
+                            : Colors.white.withOpacity(0.8),
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
                       ),
                     ),
                   ),
@@ -1373,22 +1401,14 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
-  Widget _headerCell(String text, {required int flex, bool alignRight = false}) {
-    return Expanded(
-      flex: flex,
-      child: Align(
-        alignment: alignRight ? Alignment.centerRight : Alignment.centerLeft,
-        child: Text(
-          text,
-          maxLines: 1,
-          softWrap: false,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: Colors.white.withOpacity(0.55),
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
+  Widget _headerText(String text, {TextAlign align = TextAlign.left}) {
+    return Text(
+      text,
+      textAlign: align,
+      style: TextStyle(
+        color: Colors.white.withOpacity(0.5),
+        fontSize: 12,
+        fontWeight: FontWeight.w600,
       ),
     );
   }
@@ -1439,87 +1459,83 @@ class _DashboardScreenState extends State<DashboardScreen>
     }
   }
 
+  // -----------------------------
+  // Bottom Navigation Bar with FEED
+  // -----------------------------
   Widget _buildBottomNavigationBar() {
-    return Container(
-      height: 70,
-      decoration: BoxDecoration(
-        color: const Color(0xFF172A45),
-        border: Border(
-          top: BorderSide(color: Colors.white.withOpacity(0.10), width: 1),
+    return SafeArea(
+      top: false,
+      child: Container(
+        height: 70,
+        decoration: BoxDecoration(
+          color: const Color(0xFF172A45),
+          border: Border(
+            top: BorderSide(color: Colors.white.withOpacity(0.10), width: 1),
+          ),
         ),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _buildNavButton(
-            icon: Icons.access_time,
-            label: 'Hours',
-            onTap: () {
-              if (employeeName != null && employeeLastName != null) {
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            _buildNavItem(
+              icon: Icons.access_time,
+              label: 'Hours',
+              onTap: () {
+                if (employeeName != null && employeeLastName != null) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => HoursSummaryScreen(
+                        email: widget.email,
+                        selectedDb: currentDb,
+                        employeeName: employeeName!,
+                        employeeLastName: employeeLastName!,
+                      ),
+                    ),
+                  );
+                } else {
+                  _showErrorSnack("Loading employee info...");
+                }
+              },
+            ),
+            _buildNavItem(
+              icon: Icons.dynamic_feed,
+              label: 'Feed',
+              onTap: _openFeed,
+            ),
+            _buildHomeButton(),
+            _buildNavItem(
+              icon: Icons.beach_access,
+              label: 'Holidays',
+              onTap: () {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => HoursSummaryScreen(
-                      email: widget.email,
-                      selectedDb: currentDb,
-                      employeeName: employeeName!,
-                      employeeLastName: employeeLastName!,
-                    ),
+                    builder: (_) =>
+                        HolidaysScreen(email: widget.email, selectedDb: currentDb),
                   ),
                 );
-              }
-            },
-          ),
-          _buildNavButton(
-            icon: Icons.work_outline,
-            label: 'Requests',
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => ShiftRequestsScreen(
-                    selectedDb: currentDb,
-                    userEmail: widget.email,
-                    userName: employeeName ?? 'User',
-                    userDesignation: (employeeDesignation ?? "").trim(),
+              },
+            ),
+            _buildNavItem(
+              icon: Icons.attach_money,
+              label: 'Earnings',
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        EarningsScreen(email: widget.email, selectedDb: currentDb),
                   ),
-                ),
-              );
-            },
-          ),
-          _buildHomeButton(),
-          _buildNavButton(
-            icon: Icons.beach_access,
-            label: 'Holidays',
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) =>
-                      HolidaysScreen(email: widget.email, selectedDb: currentDb),
-                ),
-              );
-            },
-          ),
-          _buildNavButton(
-            icon: Icons.attach_money,
-            label: 'Earnings',
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) =>
-                      EarningsScreen(email: widget.email, selectedDb: currentDb),
-                ),
-              );
-            },
-          ),
-        ],
+                );
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildNavButton({
+  Widget _buildNavItem({
     required IconData icon,
     required String label,
     required VoidCallback onTap,
@@ -1529,17 +1545,22 @@ class _DashboardScreenState extends State<DashboardScreen>
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
-          child: SizedBox(
-            height: 70,
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 8),
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(icon, color: Colors.white.withOpacity(0.70), size: 24),
+                Icon(icon, color: Colors.white.withOpacity(0.8), size: 22),
                 const SizedBox(height: 4),
                 Text(
                   label,
-                  style:
-                      TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.70)),
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.white.withOpacity(0.8),
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ],
             ),
@@ -1555,8 +1576,8 @@ class _DashboardScreenState extends State<DashboardScreen>
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Container(
-            width: 50,
-            height: 50,
+            width: 48,
+            height: 48,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: const LinearGradient(
@@ -1564,24 +1585,30 @@ class _DashboardScreenState extends State<DashboardScreen>
               ),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.30),
+                  color: Colors.black.withOpacity(0.3),
                   blurRadius: 8,
-                  offset: const Offset(0, 4),
-                )
+                  offset: const Offset(0, 2),
+                ),
               ],
             ),
             child: IconButton(
-              icon: const Icon(Icons.home, size: 28),
+              icon: const Icon(Icons.home, size: 24),
               color: Colors.white,
-              onPressed: () =>
-                  Navigator.of(context).popUntil((route) => route.isFirst),
+              onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst),
               tooltip: "Home",
+              padding: EdgeInsets.zero,
+              iconSize: 24,
             ),
           ),
           const SizedBox(height: 2),
-          Text('Home',
-              style:
-                  TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.70))),
+          Text(
+            'Home',
+            style: TextStyle(
+              fontSize: 11,
+              color: Colors.white.withOpacity(0.8),
+              fontWeight: FontWeight.w500,
+            ),
+          ),
         ],
       ),
     );
@@ -1599,155 +1626,193 @@ class _DashboardScreenState extends State<DashboardScreen>
   // -----------------------------
   @override
   Widget build(BuildContext context) {
-  final String first = (employeeName ?? '').trim();
-  final String last  = (employeeLastName ?? '').trim();
+    final String first = (employeeName ?? '').trim();
+    final String last = (employeeLastName ?? '').trim();
+    final String displayName = first.isNotEmpty ? first : 'User';
 
-  final String displayName = first.isNotEmpty ? first : 'User';
+    final String initials = (() {
+      final a = displayName.isNotEmpty ? displayName[0].toUpperCase() : 'U';
+      final b = last.isNotEmpty ? last[0].toUpperCase() : '';
+      return '$a$b';
+    })();
 
-  final String initials = (() {
-    final a = displayName.isNotEmpty ? displayName[0].toUpperCase() : 'U';
-    final b = last.isNotEmpty ? last[0].toUpperCase() : '';
-    return '$a$b';
-  })();
+    final role = (Session.role ?? "").trim().toLowerCase();
+    final canSeeHolidayRequests =
+        role == "manager" || role == "am" || role == "assistant manager";
 
-  final role = (Session.role ?? "").trim().toLowerCase();
-  final canSeeHolidayRequests =
-      role == "manager" || role == "am" || role == "assistant manager";
-
-  return Scaffold(
+    return Scaffold(
       backgroundColor: const Color(0xFF0A192F),
-      drawer: Drawer(
-        backgroundColor: const Color(0xFF0A192F),
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: [
-            DrawerHeader(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Color(0xFF1E3A5F), Color(0xFF0A192F)],
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  CircleAvatar(
-                    radius: 32,
-                    backgroundColor: const Color(0xFF4CC9F0),
-                    backgroundImage: _profileImageBytes != null
-                        ? MemoryImage(_profileImageBytes!)
-                        : null,
-                    child: _profileImageBytes == null
-                        ? Text(
-                            initials,
-                            style: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white),
-                          )
-                        : null,
+      // Replace the drawer section in the build method with this:
+
+drawer: Drawer(
+  backgroundColor: const Color(0xFF0A192F),
+  width: MediaQuery.of(context).size.width * 0.8,
+  child: SafeArea(
+    bottom: true,
+    child: Column(
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            child: Column(
+              children: [
+                // Custom header instead of DrawerHeader for better control
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.fromLTRB(16, 24, 16, 20),
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Color(0xFF1E3A5F), Color(0xFF0A192F)],
+                    ),
                   ),
-                  const SizedBox(height: 12),
-                  const Text('Solura',
-                      style: TextStyle(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      CircleAvatar(
+                        radius: 32,
+                        backgroundColor: const Color(0xFF4CC9F0),
+                        backgroundImage: _profileImageBytes != null
+                            ? MemoryImage(_profileImageBytes!)
+                            : null,
+                        child: _profileImageBytes == null
+                            ? Text(
+                                initials,
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : null,
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Solura',
+                        style: TextStyle(
                           color: Colors.white,
                           fontSize: 18,
-                          fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 4),
-                  Text(
-                    widget.email,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: Colors.white.withOpacity(0.70), fontSize: 14),
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      // Email with proper overflow handling
+                      Container(
+                        constraints: BoxConstraints(
+                          maxWidth: MediaQuery.of(context).size.width * 0.7,
+                        ),
+                        child: Text(
+                          widget.email,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.7),
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        "Workspace: ${currentDb.dbName}",
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.55),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
                   ),
-
-                  Text(
-                    "Workspace: ${currentDb.dbName}",
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: Colors.white.withOpacity(0.55), fontSize: 12),
+                ),
+                _DrawerTile(
+                  icon: Icons.person,
+                  title: 'Profile',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => EmployeeProfileScreen(
+                          selectedDb: currentDb,
+                          userEmail: widget.email,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                _DrawerTile(
+                  icon: Icons.people,
+                  title: 'Employees',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => EmployeesScreen(
+                          selectedDb: currentDb,
+                          userEmail: widget.email,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                _DrawerTile(
+                  icon: Icons.work_outline,
+                  title: 'Shift Requests',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ShiftRequestsScreen(
+                          selectedDb: currentDb,
+                          userEmail: widget.email,
+                          userName: displayName,
+                          userDesignation: (employeeDesignation ?? "").trim(),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                if (canSeeHolidayRequests)
+                  _DrawerTile(
+                    icon: Icons.assignment,
+                    title: "Holiday Requests",
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => HolidayRequestsScreen(
+                            selectedDb: currentDb,
+                            role: Session.role ?? "",
+                          ),
+                        ),
+                      );
+                    },
                   ),
-                ],
-              ),
+                _DrawerTile(
+                  icon: Icons.settings,
+                  title: 'Settings',
+                  onTap: () {
+                    Navigator.pop(context);
+                    _openSettingsPlaceholder();
+                  },
+                ),
+                const Divider(color: Color(0xFF1E3A5F)),
+                _DrawerTile(
+                  icon: Icons.logout,
+                  title: 'Logout',
+                  color: Colors.redAccent,
+                  onTap: _logout,
+                ),
+              ],
             ),
-            _DrawerTile(
-              icon: Icons.person,
-              title: 'Profile',
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => EmployeeProfileScreen(
-                        selectedDb: currentDb, userEmail: widget.email),
-                  ),
-                );
-              },
-            ),
-            _DrawerTile(
-              icon: Icons.people,
-              title: 'Employees',
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => EmployeesScreen(
-                        selectedDb: currentDb, userEmail: widget.email),
-                  ),
-                );
-              },
-            ),
-            _DrawerTile(
-              icon: Icons.work_outline,
-              title: 'Shift Requests',
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => ShiftRequestsScreen(
-                      selectedDb: currentDb,
-                      userEmail: widget.email,
-                      userName: displayName,
-                      userDesignation: (employeeDesignation ?? "").trim(),
-                    ),
-                  ),
-                );
-              },
-            ),
-            if (canSeeHolidayRequests)
-              _DrawerTile(
-                icon: Icons.assignment,
-                title: "Holiday Requests",
-                onTap: () {
-                  Navigator.pop(context);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => HolidayRequestsScreen(
-                          selectedDb: currentDb, role: Session.role ?? ""),
-                    ),
-                  );
-                },
-              ),
-            _DrawerTile(
-              icon: Icons.settings,
-              title: 'Settings',
-              onTap: () {
-                Navigator.pop(context);
-                _openSettingsPlaceholder();
-              },
-            ),
-            const Divider(color: Color(0xFF1E3A5F)),
-            _DrawerTile(
-              icon: Icons.logout,
-              title: 'Logout',
-              color: Colors.redAccent,
-              onTap: _logout,
-            ),
-          ],
+          ),
         ),
-      ),
+      ],
+    ),
+  ),
+),
       appBar: AppBar(
         backgroundColor: const Color(0xFF172A45),
         elevation: 0,
@@ -1821,24 +1886,29 @@ class _DashboardScreenState extends State<DashboardScreen>
           const SizedBox(width: 6),
         ],
       ),
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFF0A192F), Color(0xFF172A45), Color(0xFF0A192F)],
+      body: SafeArea(
+        top: false,
+        bottom: false,
+        child: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Color(0xFF0A192F), Color(0xFF172A45), Color(0xFF0A192F)],
+            ),
           ),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: SingleChildScrollView(
-            child: Column(
-              children: [
-                _buildClockInReminder(),
-                _buildTodayCard(),
-                _buildMyRotaTable(),
-                const SizedBox(height: 8),
-              ],
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              child: Column(
+                children: [
+                  _buildClockInReminder(),
+                  _buildTodayCard(),
+                  _buildMyRotaTable(),
+                  const SizedBox(height: 8),
+                ],
+              ),
             ),
           ),
         ),
@@ -1851,6 +1921,8 @@ class _DashboardScreenState extends State<DashboardScreen>
 // -----------------------------
 // Shared widgets + models
 // -----------------------------
+// Replace the _DrawerTile class with this more compact version:
+
 class _DrawerTile extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -1867,11 +1939,25 @@ class _DrawerTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      leading: Icon(icon, color: color ?? Colors.white.withOpacity(0.85)),
-      title: Text(title,
-          style: TextStyle(color: color ?? Colors.white.withOpacity(0.85))),
+      leading: Icon(
+        icon, 
+        color: color ?? Colors.white.withOpacity(0.85), 
+        size: 22,
+      ),
+      title: Text(
+        title,
+        style: TextStyle(
+          color: color ?? Colors.white.withOpacity(0.85),
+          fontSize: 14,
+        ),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
       onTap: onTap,
-      hoverColor: Colors.white.withOpacity(0.05),
+      dense: true,
+      visualDensity: VisualDensity.compact,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+      minVerticalPadding: 4,
     );
   }
 }

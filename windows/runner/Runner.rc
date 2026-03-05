@@ -90,12 +90,21 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "com.example" "\0"
+<<<<<<< HEAD
             VALUE "FileDescription", "solura_app_new" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "solura_app_new" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 com.example. All rights reserved." "\0"
             VALUE "OriginalFilename", "solura_app_new.exe" "\0"
             VALUE "ProductName", "solura_app_new" "\0"
+=======
+            VALUE "FileDescription", "solura_app" "\0"
+            VALUE "FileVersion", VERSION_AS_STRING "\0"
+            VALUE "InternalName", "solura_app" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 com.example. All rights reserved." "\0"
+            VALUE "OriginalFilename", "solura_app.exe" "\0"
+            VALUE "ProductName", "solura_app" "\0"
+>>>>>>> 2beae0222fe401c873d24871e59f9e4a18db426b
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

@@ -27,7 +27,11 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   FlutterWindow window(project);
   Win32Window::Point origin(10, 10);
   Win32Window::Size size(1280, 720);
+<<<<<<< HEAD
   if (!window.Create(L"solura_app_new", origin, size)) {
+=======
+  if (!window.Create(L"solura_app", origin, size)) {
+>>>>>>> 2beae0222fe401c873d24871e59f9e4a18db426b
     return EXIT_FAILURE;
   }
   window.SetQuitOnClose(true);

@@ -18,6 +18,7 @@ class DatabaseSelectionScreen extends StatelessWidget {
     Session.email = email;
     Session.db = db.dbName;
     Session.role = db.access;
+    Session.databases = databases;
 
     await Session.save(); // ✅ persists login
 

@@ -324,14 +324,16 @@ class _HolidaysScreenState extends State<HolidaysScreen> with SingleTickerProvid
     );
   }
 
-  Widget _summaryCardMinimal({
+  // Replace the _summaryCardMinimal function with this improved version:
+
+Widget _summaryCardMinimal({
   required String title,
   required String value,
   required IconData icon,
   required Color accent,
 }) {
   return Container(
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
     decoration: BoxDecoration(
       color: Colors.white.withOpacity(0.04),
       borderRadius: BorderRadius.circular(14),
@@ -340,16 +342,16 @@ class _HolidaysScreenState extends State<HolidaysScreen> with SingleTickerProvid
     child: Row(
       children: [
         Container(
-          width: 38,
-          height: 38,
+          width: 34,
+          height: 34,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: accent.withOpacity(0.18),
             border: Border.all(color: accent.withOpacity(0.35)),
           ),
-          child: Icon(icon, color: accent, size: 20),
+          child: Icon(icon, color: accent, size: 18),
         ),
-        const SizedBox(width: 10),
+        const SizedBox(width: 8),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -361,23 +363,34 @@ class _HolidaysScreenState extends State<HolidaysScreen> with SingleTickerProvid
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   color: Colors.white.withOpacity(0.7),
-                  fontSize: 12,
+                  fontSize: 11,
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              const SizedBox(height: 4),
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  value,
-                  maxLines: 1,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
+              const SizedBox(height: 2),
+              // Handle long numbers with proper formatting
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  // Determine font size based on number length
+                  double fontSize = 18;
+                  if (value.length > 5) fontSize = 14;
+                  else if (value.length > 4) fontSize = 16;
+                  
+                  return FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      value,
+                      maxLines: 1,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: fontSize,
+                        fontWeight: FontWeight.w800,
+                        height: 1.2,
+                      ),
+                    ),
+                  );
+                },
               ),
             ],
           ),
@@ -835,52 +848,54 @@ Widget build(BuildContext context) {
 
                                       // Summary cards (2 per row)
                                       if (s != null)
-                                        GridView.count(
-                                          shrinkWrap: true,
-                                          physics: const NeverScrollableScrollPhysics(),
-                                          crossAxisCount: 2,
-                                          mainAxisSpacing: 10,
-                                          crossAxisSpacing: 10,
-                                          childAspectRatio: 3.05, // slightly safer
-                                          children: [
-                                            _summaryCardMinimal(
-                                              title: "Allowance",
-                                              value: "${_fmt(s.allowanceDays, dp: 0)}",
-                                              icon: Icons.verified,
-                                              accent: const Color(0xFF4CC9F0),
-                                            ),
-                                            _summaryCardMinimal(
-                                              title: "Accrued",
-                                              value: _fmt(s.accruedDays),
-                                              icon: Icons.timeline,
-                                              accent: const Color(0xFF4ADE80),
-                                            ),
-                                            _summaryCardMinimal(
-                                              title: "Taken",
-                                              value: "${_fmt(s.takenPaidDays, dp: 0)}",
-                                              icon: Icons.check_circle,
-                                              accent: Colors.green,
-                                            ),
-                                            _summaryCardMinimal(
-                                              title: "Pending",
-                                              value: "${_fmt(s.pendingPaidDays, dp: 0)}",
-                                              icon: Icons.hourglass_top,
-                                              accent: Colors.orange,
-                                            ),
-                                            _summaryCardMinimal(
-                                              title: "Remaining",
-                                              value: _fmt(s.remainingYearDays),
-                                              icon: Icons.savings,
-                                              accent: const Color(0xFF4CC9F0),
-                                            ),
-                                            _summaryCardMinimal(
-                                              title: "Available",
-                                              value: _fmt(s.availableNowDays),
-                                              icon: Icons.lock_open,
-                                              accent: const Color(0xFF4ADE80),
-                                            ),
-                                          ],
-                                        ),
+                                        // Replace the GridView.count section in the build method:
+
+GridView.count(
+  shrinkWrap: true,
+  physics: const NeverScrollableScrollPhysics(),
+  crossAxisCount: 2,
+  mainAxisSpacing: 8,
+  crossAxisSpacing: 8,
+  childAspectRatio: 3.2, // Adjusted for better fit
+  children: [
+    _summaryCardMinimal(
+      title: "Allowance",
+      value: "${_fmt(s.allowanceDays, dp: 0)}",
+      icon: Icons.verified,
+      accent: const Color(0xFF4CC9F0),
+    ),
+    _summaryCardMinimal(
+      title: "Accrued",
+      value: _fmt(s.accruedDays),
+      icon: Icons.timeline,
+      accent: const Color(0xFF4ADE80),
+    ),
+    _summaryCardMinimal(
+      title: "Taken",
+      value: "${_fmt(s.takenPaidDays, dp: 0)}",
+      icon: Icons.check_circle,
+      accent: Colors.green,
+    ),
+    _summaryCardMinimal(
+      title: "Pending",
+      value: "${_fmt(s.pendingPaidDays, dp: 0)}",
+      icon: Icons.hourglass_top,
+      accent: Colors.orange,
+    ),
+    _summaryCardMinimal(
+      title: "Remaining",
+      value: _fmt(s.remainingYearDays),
+      icon: Icons.savings,
+      accent: const Color(0xFF4CC9F0),
+    ),
+    _summaryCardMinimal(
+      title: "Available",
+      value: _fmt(s.availableNowDays),
+      icon: Icons.lock_open,
+      accent: const Color(0xFF4ADE80),
+    ),
+  ],
+),
 
                                       const SizedBox(height: 12),
 

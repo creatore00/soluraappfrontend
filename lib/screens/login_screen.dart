@@ -50,16 +50,18 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => loading = true);
 
     try {
+      // Check if biometrics are available and enrolled
       final canCheck = await auth.canCheckBiometrics;
       final isSupported = await auth.isDeviceSupported();
-      if (!canCheck || !isSupported) {
+      final availableBiometrics = await auth.getAvailableBiometrics();
+      
+      if (!canCheck || !isSupported || availableBiometrics.isEmpty) {
         setState(() => loading = false);
         return;
       }
 
       final success = await auth.authenticate(
         localizedReason: "Authenticate to access Solura",
-          biometricOnly: false,
       );
 
       if (!success) {
@@ -77,12 +79,49 @@ class _LoginScreenState extends State<LoginScreen> {
       }
 
       _navigateAfterLogin(savedEmail, result.databases);
-    } catch (_) {
+    } catch (e) {
+      print("Auto biometric error: $e");
       if (mounted) setState(() => loading = false);
     }
   }
 
+  Future<bool> _checkBiometricAvailability() async {
+    try {
+      final canCheck = await auth.canCheckBiometrics;
+      final isSupported = await auth.isDeviceSupported();
+      final availableBiometrics = await auth.getAvailableBiometrics();
+      
+      print("Can check biometrics: $canCheck");
+      print("Device supported: $isSupported");
+      print("Available biometrics: $availableBiometrics");
+      
+      // Check if there are any biometrics enrolled
+      return canCheck && isSupported && availableBiometrics.isNotEmpty;
+    } catch (e) {
+      print("Error checking biometrics: $e");
+      return false;
+    }
+  }
+
   Future<bool> _askEnableBiometrics() async {
+    // First check if biometrics are available and enrolled
+    final isAvailable = await _checkBiometricAvailability();
+    
+    if (!isAvailable) {
+      print("Biometrics not available for dialog");
+      return false;
+    }
+
+    // Get the actual biometric types
+    final availableBiometrics = await auth.getAvailableBiometrics();
+    
+    String biometricType = "Biometric";
+    if (availableBiometrics.contains(BiometricType.face)) {
+      biometricType = "Face ID";
+    } else if (availableBiometrics.contains(BiometricType.fingerprint)) {
+      biometricType = "Touch ID / Fingerprint";
+    }
+
     final result = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -96,7 +135,7 @@ class _LoginScreenState extends State<LoginScreen> {
             borderRadius: BorderRadius.circular(20),
             side: BorderSide(color: Colors.white.withOpacity(0.1), width: 1),
           ),
-          title: Text(
+          title: const Text(
             "Enable Biometric Login?",
             style: TextStyle(
               color: Colors.white,
@@ -104,20 +143,42 @@ class _LoginScreenState extends State<LoginScreen> {
               fontWeight: FontWeight.bold,
             ),
           ),
-          content: Text(
-            "Would you like to use biometric authentication (Face ID / Fingerprint) for faster login next time?",
-            style: TextStyle(
-              color: Colors.white.withOpacity(0.8),
-              fontSize: 16,
-            ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                biometricType.contains("Face") ? Icons.face : Icons.fingerprint,
+                color: const Color(0xFF4CC9F0),
+                size: 64,
+              ),
+              const SizedBox(height: 20),
+              Text(
+                "Would you like to use $biometricType for faster login next time?",
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.9),
+                  fontSize: 16,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                "You'll be prompted to authenticate with your biometrics",
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.6),
+                  fontSize: 14,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: Text(
+              child: const Text(
                 "Not Now",
                 style: TextStyle(
-                  color: const Color(0xFF4CC9F0),
+                  color: Color(0xFF4CC9F0),
+                  fontSize: 16,
                 ),
               ),
             ),
@@ -126,13 +187,18 @@ class _LoginScreenState extends State<LoginScreen> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF4CC9F0),
                 foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               ),
-              child: const Text("Enable"),
+              child: const Text(
+                "Enable",
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
             ),
           ],
         ),
       ),
     );
+    
     return result == true;
   }
 
@@ -165,20 +231,66 @@ class _LoginScreenState extends State<LoginScreen> {
         return;
       }
 
-      // Ask to enable biometrics if supported
-      final canCheck = await auth.canCheckBiometrics;
-      final isSupported = await auth.isDeviceSupported();
-      bool enableBiometrics = false;
+      // Check if biometrics are available on the device
+      final biometricsAvailable = await _checkBiometricAvailability();
+      
+      print("Biometrics available for dialog: $biometricsAvailable");
 
-      if (canCheck && isSupported) {
+      // Ask to enable biometrics if supported
+      bool enableBiometrics = false;
+      
+      if (biometricsAvailable) {
         enableBiometrics = await _askEnableBiometrics();
+        print("User chose to enable biometrics: $enableBiometrics");
       }
 
       if (enableBiometrics) {
-        await storage.write(key: _keyEmail, value: email);
-        await storage.write(key: _keyPassword, value: password);
-        await storage.write(key: _keyBiometricsEnabled, value: "true");
+        // Test biometric authentication first
+        try {
+          final authenticated = await auth.authenticate(
+            localizedReason: "Verify your identity to enable biometric login",
+          );
+
+          if (authenticated) {
+            await storage.write(key: _keyEmail, value: email);
+            await storage.write(key: _keyPassword, value: password);
+            await storage.write(key: _keyBiometricsEnabled, value: "true");
+            
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text("Biometric login enabled successfully!"),
+                  backgroundColor: Colors.green,
+                  duration: Duration(seconds: 2),
+                ),
+              );
+            }
+          } else {
+            // If biometric test fails, don't enable
+            await storage.write(key: _keyBiometricsEnabled, value: "false");
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text("Biometric authentication failed"),
+                  backgroundColor: Colors.orange,
+                ),
+              );
+            }
+          }
+        } catch (e) {
+          print("Biometric test error: $e");
+          await storage.write(key: _keyBiometricsEnabled, value: "false");
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text("Biometric error: ${e.toString().split('.').last}"),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+        }
       } else {
+        // User declined biometrics or biometrics not available
         await storage.write(key: _keyBiometricsEnabled, value: "false");
         await storage.delete(key: _keyEmail);
         await storage.delete(key: _keyPassword);
@@ -257,9 +369,9 @@ class _LoginScreenState extends State<LoginScreen> {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              Color(0xFF0A192F), // Dark navy
-              Color(0xFF172A45), // Medium navy
-              Color(0xFF1E3A5F), // Lighter navy
+              Color(0xFF0A192F),
+              Color(0xFF172A45),
+              Color(0xFF1E3A5F),
             ],
             stops: [0.0, 0.5, 1.0],
           ),
@@ -328,11 +440,14 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ],
                       ),
-                      child: const Center(
-                        child: Icon(
-                          Icons.business,
-                          size: 50,
-                          color: Colors.white,
+                      child: Center(
+                        child: ClipOval(
+                          child: Image.asset(
+                            "assets/icon/icon.png",
+                            width: 60,
+                            height: 60,
+                            fit: BoxFit.cover,
+                          ),
                         ),
                       ),
                     ),
@@ -574,42 +689,6 @@ class _LoginScreenState extends State<LoginScreen> {
                                       ],
                                     ),
                             ),
-                          ),
-
-                          const SizedBox(height: 24),
-
-                          // Biometric Login Hint
-                          FutureBuilder<bool>(
-                            future: Future.wait([
-                              auth.canCheckBiometrics,
-                              auth.isDeviceSupported(),
-                            ]).then((results) => results[0] && results[1]),
-                            builder: (context, snapshot) {
-                              if (snapshot.connectionState ==
-                                      ConnectionState.waiting ||
-                                  !snapshot.hasData ||
-                                  !snapshot.data!) {
-                                return const SizedBox();
-                              }
-                              return Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    Icons.fingerprint,
-                                    color: Colors.white.withOpacity(0.6),
-                                    size: 16,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    "Biometric login available",
-                                    style: TextStyle(
-                                      color: Colors.white.withOpacity(0.6),
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                ],
-                              );
-                            },
                           ),
 
                           const SizedBox(height: 16),
