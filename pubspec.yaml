@@ -22,6 +22,8 @@ dependencies:
   video_player: ^2.8.3
   chewie: ^1.5.0
   image_picker: ^1.0.7
+  flutter_local_notifications: ^17.2.4
+  timezone: ^0.9.4
   
 dev_dependencies:
   flutter_test:
@@ -36,13 +38,18 @@ flutter:
     - assets/icon/icon.png
 
 flutter_native_splash:
-  color: "#ffffff"               # background
-  image: "assets/icon/icon.png"  # logo
+  color: "#0A192F"
+  image: "assets/icon/icon.png"
   android: true
   ios: true
-  android_gravity: center        # fills and centers logo
-  ios_content_mode: scaleAspectFill
+  android_gravity: center
+  ios_content_mode: scaleAspectFit
   fullscreen: true
-
+  
+  # Force background color everywhere
+  color_dark: "#0A192F"
+  
+  # Disable web
+  web: false
 
 

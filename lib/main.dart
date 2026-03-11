@@ -1,12 +1,23 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'services/session.dart';
 import 'models/database_access.dart';
+import 'services/notifications_service.dart';
+import 'services/notification_service.dart';
+
+// Global navigator key for navigation from notifications
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Initialize notifications
+  final notificationService = NotificationService();
+  await notificationService.init();
+  
   final hasSession = await Session.load();
   runApp(SoluraApp(hasSession: hasSession));
 }
@@ -21,6 +32,7 @@ class SoluraApp extends StatelessWidget {
       title: 'Solura',
       debugShowCheckedModeBanner: false,
       theme: ThemeData.light(useMaterial3: true),
+      navigatorKey: navigatorKey, // Add for notification navigation
       home: hasSession ? const SessionGate() : const LoginScreen(),
     );
   }

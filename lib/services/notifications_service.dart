@@ -1,70 +1,68 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'auth_service.dart';
 
 class NotificationsService {
-  static Future<List<Map<String, dynamic>>> fetchNotifications({
-    required String db,
-    required String role,
-  }) async {
-    final uri = Uri.parse("${AuthService.baseUrl}/notifications?db=$db&role=$role");
-    final res = await http.get(uri);
+  static const String baseUrl = "https://solura-backend.onrender.com";
 
-    if (res.statusCode != 200) {
-      throw Exception("Failed to fetch notifications (${res.statusCode})");
-    }
+  static Future<List<dynamic>> fetchNotifications({required String db, required String role}) async {
+    try {
+      final response = await http.get(
+        Uri.parse("$baseUrl/notifications?db=$db&role=$role"),
+      );
 
-    final body = res.body.trim();
-    if (body.startsWith('<!DOCTYPE html>')) {
-      throw Exception("Server returned HTML error page for /notifications");
-    }
-
-    final data = jsonDecode(body);
-    if (data['success'] != true) {
-      throw Exception(data['message'] ?? "Unknown error");
-    }
-
-    final list = List<Map<String, dynamic>>.from(data['notifications'] ?? []);
-    return list;
-  }
-
-  static Future<void> markAsRead({
-    required String db,
-    required int id,
-  }) async {
-    final uri = Uri.parse("${AuthService.baseUrl}/notifications/read");
-    final res = await http.post(
-      uri,
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'db': db, 'id': id}),
-    );
-
-    final body = res.body.trim();
-    if (body.startsWith('<!DOCTYPE html>')) {
-      throw Exception("Server returned HTML error page for /notifications/read");
-    }
-
-    final data = jsonDecode(body);
-    if (res.statusCode != 200 || data['success'] != true) {
-      throw Exception(data['message'] ?? "Failed to mark as read");
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) {
+          return data['notifications'] ?? [];
+        }
+      }
+      return [];
+    } catch (e) {
+      print('Error fetching notifications: $e');
+      return [];
     }
   }
 
-  static Future<int> fetchUnreadCount({
-    required String db,
-    required String role,
-  }) async {
-    final list = await fetchNotifications(db: db, role: role);
-    return list.where((n) => (n['isRead'] == 0 || n['isRead'] == false)).length;
+  static Future<int> fetchUnreadCount({required String db, required String role}) async {
+    try {
+      final response = await http.get(
+        Uri.parse("$baseUrl/notifications/unread?db=$db&role=$role"),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) {
+          return data['unreadCount'] ?? 0;
+        }
+      }
+      return 0;
+    } catch (e) {
+      print('Error fetching unread count: $e');
+      return 0;
+    }
   }
 
-  static Future<void> markAllAsRead({
-    required String db,
-    required List<int> ids,
-  }) async {
-    // Backend doesn’t have bulk endpoint, so do sequential.
-    for (final id in ids) {
-      await markAsRead(db: db, id: id);
+  static Future<void> markAsRead({required String db, required int id}) async {
+    try {
+      await http.post(
+        Uri.parse("$baseUrl/notifications/mark-read"),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({"db": db, "id": id}),
+      );
+    } catch (e) {
+      print('Error marking notification as read: $e');
+    }
+  }
+
+  static Future<void> markAllAsRead({required String db, required List<int> ids}) async {
+    try {
+      await http.post(
+        Uri.parse("$baseUrl/notifications/mark-all-read"),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({"db": db, "ids": ids}),
+      );
+    } catch (e) {
+      print('Error marking all notifications as read: $e');
     }
   }
 }

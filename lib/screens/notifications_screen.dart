@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/database_access.dart';
 import '../services/notifications_service.dart';
+import '../services/notification_service.dart';
 import 'holiday_requests_screen.dart';
 
 class NotificationsScreen extends StatefulWidget {
@@ -32,20 +33,26 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   Future<void> _load() async {
     setState(() => loading = true);
     try {
-      final list = await NotificationsService.fetchNotifications(
-        db: widget.selectedDb.dbName,
-        role: widget.role,
-      );
-      if (!mounted) return;
-      setState(() => items = list);
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Failed to load: $e")),
-      );
-    } finally {
-      if (mounted) setState(() => loading = false);
-    }
+        final list = await NotificationsService.fetchNotifications(
+          db: widget.selectedDb.dbName,
+          role: widget.role,
+        );
+        if (!mounted) return;
+        
+        // Cast the list properly
+        setState(() {
+          items = List<Map<String, dynamic>>.from(
+            list.map((item) => Map<String, dynamic>.from(item))
+          );
+        });
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Failed to load: $e")),
+        );
+      } finally {
+        if (mounted) setState(() => loading = false);
+      }
   }
 
   bool _isRead(Map<String, dynamic> n) {

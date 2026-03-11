@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
+import '../services/notifications_service.dart';
+import '../services/notification_service.dart';
 import '../models/database_access.dart';
 import 'database_selection_screen.dart';
 import 'dashboard_screen.dart';
@@ -33,6 +35,17 @@ class _LoginScreenState extends State<LoginScreen> {
   void initState() {
     super.initState();
     _tryAutoBiometricLogin();
+  }
+
+  Future<void> _sendLoginNotifications() async {
+    try {
+      final notificationService = NotificationService();
+      await notificationService.init();
+      await notificationService.scheduleLoginNotifications();
+      print('✅ Login notifications scheduled successfully');
+    } catch (e) {
+      print('❌ Error scheduling notifications: $e');
+    }
   }
 
   Future<void> _tryAutoBiometricLogin() async {
@@ -77,6 +90,9 @@ class _LoginScreenState extends State<LoginScreen> {
         setState(() => message = result.message);
         return;
       }
+
+      // Send welcome notifications after successful auto login
+      await _sendLoginNotifications();
 
       _navigateAfterLogin(savedEmail, result.databases);
     } catch (e) {
@@ -231,6 +247,9 @@ class _LoginScreenState extends State<LoginScreen> {
         return;
       }
 
+      // Send welcome notifications after successful login
+      await _sendLoginNotifications();
+
       // Check if biometrics are available on the device
       final biometricsAvailable = await _checkBiometricAvailability();
       
@@ -359,8 +378,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final screenHeight = MediaQuery.of(context).size.height;
-    final screenWidth = MediaQuery.of(context).size.width;
+    final screenSize = MediaQuery.of(context).size;
+    final bool isTablet = screenSize.width > 600;
+    final bool isLandscape = screenSize.width > screenSize.height;
 
     return Scaffold(
       body: Container(
@@ -378,13 +398,13 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
         child: Stack(
           children: [
-            // Decorative elements
+            // Decorative elements - scaled for tablets
             Positioned(
               top: -100,
               right: -100,
               child: Container(
-                width: 300,
-                height: 300,
+                width: isTablet ? 400 : 300,
+                height: isTablet ? 400 : 300,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   gradient: RadialGradient(
@@ -400,8 +420,8 @@ class _LoginScreenState extends State<LoginScreen> {
               bottom: -50,
               left: -50,
               child: Container(
-                width: 200,
-                height: 200,
+                width: isTablet ? 300 : 200,
+                height: isTablet ? 300 : 200,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   gradient: RadialGradient(
@@ -414,297 +434,305 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             ),
 
-            SingleChildScrollView(
-              child: SizedBox(
-                height: screenHeight,
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    // Logo and App Name
-                    Container(
-                      width: 100,
-                      height: 100,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: const LinearGradient(
-                          colors: [
-                            Color(0xFF4CC9F0),
-                            Color(0xFF1E3A5F),
+            // Main content - properly centered
+            Center(
+              child: SingleChildScrollView(
+                padding: EdgeInsets.symmetric(
+                  horizontal: isTablet ? 40 : 20,
+                  vertical: 20,
+                ),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: isTablet ? 500 : 400,
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      // Logo and App Name
+                      Container(
+                        width: isTablet ? 120 : 100,
+                        height: isTablet ? 120 : 100,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: const LinearGradient(
+                            colors: [
+                              Color(0xFF4CC9F0),
+                              Color(0xFF1E3A5F),
+                            ],
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.3),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            ),
                           ],
                         ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.3),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: Center(
-                        child: ClipOval(
-                          child: Image.asset(
-                            "assets/icon/icon.png",
-                            width: 60,
-                            height: 60,
-                            fit: BoxFit.cover,
+                        child: Center(
+                          child: ClipOval(
+                            child: Image.asset(
+                              "assets/icon/icon.png",
+                              width: isTablet ? 70 : 60,
+                              height: isTablet ? 70 : 60,
+                              fit: BoxFit.cover,
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 20),
-                    const Text(
-                      "Solura",
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 42,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1.5,
+                      const SizedBox(height: 20),
+                      Text(
+                        "Solura",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: isTablet ? 48 : 42,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.5,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      "Enterprise Dashboard",
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.7),
-                        fontSize: 16,
-                        letterSpacing: 3,
+                      const SizedBox(height: 8),
+                      Text(
+                        "Enterprise Dashboard",
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.7),
+                          fontSize: isTablet ? 18 : 16,
+                          letterSpacing: 3,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 40),
+                      const SizedBox(height: 40),
 
-                    // Login Card
-                    Container(
-                      width: screenWidth > 600 ? 500 : screenWidth * 0.9,
-                      margin: const EdgeInsets.symmetric(horizontal: 20),
-                      padding: const EdgeInsets.all(32),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF172A45).withOpacity(0.8),
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(color: Colors.white.withOpacity(0.1)),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.3),
-                            blurRadius: 20,
-                            offset: const Offset(0, 10),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        children: [
-                          const Text(
-                            "Welcome Back",
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 28,
-                              fontWeight: FontWeight.bold,
+                      // Login Card
+                      Container(
+                        width: double.infinity,
+                        padding: EdgeInsets.all(isTablet ? 40 : 32),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF172A45).withOpacity(0.8),
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(color: Colors.white.withOpacity(0.1)),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.3),
+                              blurRadius: 20,
+                              offset: const Offset(0, 10),
                             ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            "Sign in to your workspace",
-                            style: TextStyle(
-                              color: Colors.white.withOpacity(0.6),
-                              fontSize: 16,
-                            ),
-                          ),
-                          const SizedBox(height: 32),
-
-                          // Email Field
-                          Container(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(12),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.1),
-                                  blurRadius: 5,
-                                  offset: const Offset(0, 3),
-                                ),
-                              ],
-                            ),
-                            child: TextField(
-                              controller: emailController,
-                              style: const TextStyle(color: Colors.white),
-                              decoration: InputDecoration(
-                                labelText: "Email Address",
-                                labelStyle: TextStyle(
-                                  color: Colors.white.withOpacity(0.6),
-                                ),
-                                filled: true,
-                                fillColor: Colors.white.withOpacity(0.05),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  borderSide: BorderSide.none,
-                                ),
-                                focusedBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  borderSide: const BorderSide(
-                                    color: Color(0xFF4CC9F0),
-                                    width: 2,
-                                  ),
-                                ),
-                                prefixIcon: Icon(
-                                  Icons.email,
-                                  color: Colors.white.withOpacity(0.6),
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(
-                                  vertical: 16,
-                                  horizontal: 20,
-                                ),
-                              ),
-                              keyboardType: TextInputType.emailAddress,
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-
-                          // Password Field
-                          Container(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(12),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.1),
-                                  blurRadius: 5,
-                                  offset: const Offset(0, 3),
-                                ),
-                              ],
-                            ),
-                            child: TextField(
-                              controller: passwordController,
-                              style: const TextStyle(color: Colors.white),
-                              obscureText: !showPassword,
-                              decoration: InputDecoration(
-                                labelText: "Password",
-                                labelStyle: TextStyle(
-                                  color: Colors.white.withOpacity(0.6),
-                                ),
-                                filled: true,
-                                fillColor: Colors.white.withOpacity(0.05),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  borderSide: BorderSide.none,
-                                ),
-                                focusedBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  borderSide: const BorderSide(
-                                    color: Color(0xFF4CC9F0),
-                                    width: 2,
-                                  ),
-                                ),
-                                prefixIcon: Icon(
-                                  Icons.lock,
-                                  color: Colors.white.withOpacity(0.6),
-                                ),
-                                suffixIcon: IconButton(
-                                  icon: Icon(
-                                    showPassword
-                                        ? Icons.visibility
-                                        : Icons.visibility_off,
-                                    color: Colors.white.withOpacity(0.6),
-                                  ),
-                                  onPressed: () {
-                                    setState(() {
-                                      showPassword = !showPassword;
-                                    });
-                                  },
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(
-                                  vertical: 16,
-                                  horizontal: 20,
-                                ),
+                          ],
+                        ),
+                        child: Column(
+                          children: [
+                            Text(
+                              "Welcome Back",
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: isTablet ? 32 : 28,
+                                fontWeight: FontWeight.bold,
                               ),
                             ),
-                          ),
-                          const SizedBox(height: 24),
+                            const SizedBox(height: 8),
+                            Text(
+                              "Sign in to your workspace",
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.6),
+                                fontSize: isTablet ? 18 : 16,
+                              ),
+                            ),
+                            const SizedBox(height: 32),
 
-                          // Error Message
-                          if (message.isNotEmpty)
+                            // Email Field
                             Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
-                                color: Colors.red.withOpacity(0.1),
                                 borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: Colors.red.withOpacity(0.3),
-                                ),
-                              ),
-                              child: Row(
-                                children: [
-                                  const Icon(
-                                    Icons.error_outline,
-                                    color: Colors.red,
-                                    size: 20,
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Text(
-                                      message,
-                                      style: const TextStyle(
-                                        color: Colors.red,
-                                        fontSize: 14,
-                                      ),
-                                    ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.1),
+                                    blurRadius: 5,
+                                    offset: const Offset(0, 3),
                                   ),
                                 ],
                               ),
-                            ),
-                          if (message.isNotEmpty) const SizedBox(height: 16),
-
-                          // Login Button
-                          SizedBox(
-                            width: double.infinity,
-                            height: 56,
-                            child: ElevatedButton(
-                              onPressed: loading ? null : handleLogin,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF4CC9F0),
-                                foregroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                elevation: 0,
-                                shadowColor: Colors.transparent,
-                              ),
-                              child: loading
-                                  ? const SizedBox(
-                                      width: 24,
-                                      height: 24,
-                                      child: CircularProgressIndicator(
-                                        color: Colors.white,
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : const Row(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: [
-                                        Text(
-                                          "Sign In",
-                                          style: TextStyle(
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                        SizedBox(width: 8),
-                                        Icon(Icons.arrow_forward, size: 20),
-                                      ],
+                              child: TextField(
+                                controller: emailController,
+                                style: const TextStyle(color: Colors.white),
+                                decoration: InputDecoration(
+                                  labelText: "Email Address",
+                                  labelStyle: TextStyle(
+                                    color: Colors.white.withOpacity(0.6),
+                                  ),
+                                  filled: true,
+                                  fillColor: Colors.white.withOpacity(0.05),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: BorderSide.none,
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: const BorderSide(
+                                      color: Color(0xFF4CC9F0),
+                                      width: 2,
                                     ),
+                                  ),
+                                  prefixIcon: Icon(
+                                    Icons.email,
+                                    color: Colors.white.withOpacity(0.6),
+                                  ),
+                                  contentPadding: EdgeInsets.symmetric(
+                                    vertical: isTablet ? 18 : 16,
+                                    horizontal: 20,
+                                  ),
+                                ),
+                                keyboardType: TextInputType.emailAddress,
+                              ),
                             ),
-                          ),
+                            const SizedBox(height: 20),
 
-                          const SizedBox(height: 16),
-
-                          // Footer
-                          Text(
-                            "© 2024 Solura Enterprise. All rights reserved.",
-                            style: TextStyle(
-                              color: Colors.white.withOpacity(0.4),
-                              fontSize: 12,
+                            // Password Field
+                            Container(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(12),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.1),
+                                    blurRadius: 5,
+                                    offset: const Offset(0, 3),
+                                  ),
+                                ],
+                              ),
+                              child: TextField(
+                                controller: passwordController,
+                                style: const TextStyle(color: Colors.white),
+                                obscureText: !showPassword,
+                                decoration: InputDecoration(
+                                  labelText: "Password",
+                                  labelStyle: TextStyle(
+                                    color: Colors.white.withOpacity(0.6),
+                                  ),
+                                  filled: true,
+                                  fillColor: Colors.white.withOpacity(0.05),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: BorderSide.none,
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: const BorderSide(
+                                      color: Color(0xFF4CC9F0),
+                                      width: 2,
+                                    ),
+                                  ),
+                                  prefixIcon: Icon(
+                                    Icons.lock,
+                                    color: Colors.white.withOpacity(0.6),
+                                  ),
+                                  suffixIcon: IconButton(
+                                    icon: Icon(
+                                      showPassword
+                                          ? Icons.visibility
+                                          : Icons.visibility_off,
+                                      color: Colors.white.withOpacity(0.6),
+                                    ),
+                                    onPressed: () {
+                                      setState(() {
+                                        showPassword = !showPassword;
+                                      });
+                                    },
+                                  ),
+                                  contentPadding: EdgeInsets.symmetric(
+                                    vertical: isTablet ? 18 : 16,
+                                    horizontal: 20,
+                                  ),
+                                ),
+                              ),
                             ),
-                          ),
-                        ],
+                            const SizedBox(height: 24),
+
+                            // Error Message
+                            if (message.isNotEmpty)
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.red.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: Colors.red.withOpacity(0.3),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.error_outline,
+                                      color: Colors.red,
+                                      size: 20,
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(
+                                        message,
+                                        style: const TextStyle(
+                                          color: Colors.red,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            if (message.isNotEmpty) const SizedBox(height: 16),
+
+                            // Login Button
+                            SizedBox(
+                              width: double.infinity,
+                              height: isTablet ? 64 : 56,
+                              child: ElevatedButton(
+                                onPressed: loading ? null : handleLogin,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF4CC9F0),
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  elevation: 0,
+                                  shadowColor: Colors.transparent,
+                                ),
+                                child: loading
+                                    ? const SizedBox(
+                                        width: 24,
+                                        height: 24,
+                                        child: CircularProgressIndicator(
+                                          color: Colors.white,
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : Row(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Text(
+                                            "Sign In",
+                                            style: TextStyle(
+                                              fontSize: isTablet ? 20 : 18,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Icon(Icons.arrow_forward, size: isTablet ? 22 : 20),
+                                        ],
+                                      ),
+                              ),
+                            ),
+
+                            const SizedBox(height: 16),
+
+                            // Footer
+                            Text(
+                              "© 2024 Solura Enterprise. All rights reserved.",
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.4),
+                                fontSize: isTablet ? 13 : 12,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),

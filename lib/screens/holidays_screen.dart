@@ -3,7 +3,7 @@
 // - Builds year dropdown: prev/current/next based on backend current year
 // - Fetches holidays for selected year via yearStart/yearEnd query params
 // - Default tab = Approved
-// - Fixes summary card overflow for small screens
+// - Fixes summary card overflow for small screens and landscape mode
 // ==================================
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -37,8 +37,8 @@ class HolidayItem {
   final int days;
   final String who;
   final String notes;
-  final String status; // Pending / Approved (Paid/Unpaid) / Declined
-  final String type; // Paid / Unpaid
+  final String status;
+  final String type;
 
   HolidayItem({
     required this.startDate,
@@ -105,9 +105,9 @@ class HolidaySummary {
 }
 
 class YearOption {
-  final String start; // yyyy-mm-dd
-  final String end;   // yyyy-mm-dd
-  final String key;   // "yyyy-mm-dd → yyyy-mm-dd"
+  final String start;
+  final String end;
+  final String key;
 
   YearOption({required this.start, required this.end}) : key = "$start → $end";
 }
@@ -117,7 +117,6 @@ class _HolidaysScreenState extends State<HolidaysScreen> with SingleTickerProvid
   bool error = false;
   String errorMessage = '';
 
-  // 3-year options (prev/current/next)
   List<YearOption> _yearOptions = [];
   YearOption? _selectedYear;
 
@@ -131,7 +130,6 @@ class _HolidaysScreenState extends State<HolidaysScreen> with SingleTickerProvid
   @override
   void initState() {
     super.initState();
-    // default tab = Approved (index 1)
     _tabs = TabController(length: 3, vsync: this, initialIndex: 1);
     _fetchInitialCurrentYear();
   }
@@ -142,8 +140,6 @@ class _HolidaysScreenState extends State<HolidaysScreen> with SingleTickerProvid
     super.dispose();
   }
 
-  // ---------------- Date helpers ----------------
-  // Year window is yyyy-mm-dd to yyyy-mm-dd
   DateTime _parseYMD(String ymd) {
     final parts = ymd.split('-');
     if (parts.length != 3) return DateTime.now();
@@ -153,7 +149,6 @@ class _HolidaysScreenState extends State<HolidaysScreen> with SingleTickerProvid
     return DateTime(y, m, d);
   }
 
-  // Build prev/current/next by shifting both start/end by +/- 1 year
   YearOption _shiftYear(YearOption base, int deltaYears) {
     final s = _parseYMD(base.start);
     final e = _parseYMD(base.end);
@@ -164,9 +159,7 @@ class _HolidaysScreenState extends State<HolidaysScreen> with SingleTickerProvid
     return YearOption(start: fmt(s2), end: fmt(e2));
   }
 
-  // ---------------- Fetch logic ----------------
   Future<void> _fetchInitialCurrentYear() async {
-    // call /holidays without yearStart/yearEnd to get currentYear from backend
     setState(() {
       loading = true;
       error = false;
@@ -199,7 +192,6 @@ class _HolidaysScreenState extends State<HolidaysScreen> with SingleTickerProvid
 
       final year = data["year"];
       if (year == null) {
-        // no HolidayYearSettings row matches today
         if (!mounted) return;
         setState(() {
           _yearOptions = [];
@@ -224,7 +216,6 @@ class _HolidaysScreenState extends State<HolidaysScreen> with SingleTickerProvid
       _yearOptions = [prev, current, next];
       _selectedYear = current;
 
-      // Now fetch for current year explicitly (so same parsing path)
       await _fetchForYear(current);
 
       if (!mounted) return;
@@ -301,7 +292,6 @@ class _HolidaysScreenState extends State<HolidaysScreen> with SingleTickerProvid
     }
   }
 
-  // ---------------- UI helpers ----------------
   Color _statusColor(String status) {
     final s = status.toLowerCase();
     if (s.startsWith("approved")) return Colors.green;
@@ -309,97 +299,75 @@ class _HolidaysScreenState extends State<HolidaysScreen> with SingleTickerProvid
     return Colors.orange;
   }
 
-  String _fmt(num v, {int dp = 2}) => v.toStringAsFixed(dp);
+  String _fmt(num v, {int dp = 2}) {
+    if (v == v.toInt()) {
+      return v.toInt().toString();
+    }
+    return v.toStringAsFixed(dp);
+  }
 
-  Widget _tightValue(String text, {double max = 18}) {
-    // prevents overflow in cards
-    return FittedBox(
-      fit: BoxFit.scaleDown,
-      alignment: Alignment.centerLeft,
-      child: Text(
-        text,
-        maxLines: 1,
-        style: TextStyle(color: Colors.white, fontSize: max, fontWeight: FontWeight.bold),
+  Widget _summaryCardMinimal({
+    required String title,
+    required String value,
+    required IconData icon,
+    required Color accent,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.04),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withOpacity(0.08)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 30,
+            height: 30,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: accent.withOpacity(0.18),
+              border: Border.all(color: accent.withOpacity(0.35)),
+            ),
+            child: Icon(icon, color: accent, size: 16),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.7),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    value,
+                    maxLines: 1,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
-
-  // Replace the _summaryCardMinimal function with this improved version:
-
-Widget _summaryCardMinimal({
-  required String title,
-  required String value,
-  required IconData icon,
-  required Color accent,
-}) {
-  return Container(
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-    decoration: BoxDecoration(
-      color: Colors.white.withOpacity(0.04),
-      borderRadius: BorderRadius.circular(14),
-      border: Border.all(color: Colors.white.withOpacity(0.08)),
-    ),
-    child: Row(
-      children: [
-        Container(
-          width: 34,
-          height: 34,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: accent.withOpacity(0.18),
-            border: Border.all(color: accent.withOpacity(0.35)),
-          ),
-          child: Icon(icon, color: accent, size: 18),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: Colors.white.withOpacity(0.7),
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 2),
-              // Handle long numbers with proper formatting
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  // Determine font size based on number length
-                  double fontSize = 18;
-                  if (value.length > 5) fontSize = 14;
-                  else if (value.length > 4) fontSize = 16;
-                  
-                  return FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      value,
-                      maxLines: 1,
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: fontSize,
-                        fontWeight: FontWeight.w800,
-                        height: 1.2,
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ],
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
 
   Widget _holidayCard(HolidayItem h) {
     final badgeColor = _statusColor(h.status);
@@ -464,13 +432,14 @@ Widget _summaryCardMinimal({
   }
 
   Widget _emptyState(String text) {
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Center(child: Text(text, style: TextStyle(color: Colors.white.withOpacity(0.6)))),
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Text(text, style: TextStyle(color: Colors.white.withOpacity(0.6))),
+      ),
     );
   }
 
-  // ---------------- Request Holiday dialog ----------------
   Future<void> _showRequestHolidayDialog() async {
     DateTime? start;
     DateTime? end;
@@ -682,7 +651,6 @@ Widget _summaryCardMinimal({
         const SnackBar(content: Text("Holiday request submitted successfully")),
       );
 
-      // refresh currently selected year
       final y = _selectedYear;
       if (y != null) {
         await _fetchForYear(y);
@@ -704,262 +672,273 @@ Widget _summaryCardMinimal({
     }
   }
 
-  // ---------------- Build ----------------
-@override
-Widget build(BuildContext context) {
-  final y = _selectedYear;
-  final s = _summary;
+  @override
+  Widget build(BuildContext context) {
+    final y = _selectedYear;
+    final s = _summary;
+    final screenSize = MediaQuery.of(context).size;
+    final bool isLandscape = screenSize.width > screenSize.height;
+    final bool isTablet = screenSize.width > 600;
 
-  return Scaffold(
-    backgroundColor: const Color(0xFF0A192F),
-    appBar: AppBar(
-      backgroundColor: const Color(0xFF172A45),
-      elevation: 0,
-      title: const Text(
-        "Holidays",
-        style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
-      ),
-      leading: IconButton(
-        icon: const Icon(Icons.arrow_back, color: Color(0xFF4CC9F0)),
-        onPressed: () => Navigator.pop(context),
-      ),
-      actions: [
-        IconButton(
-          tooltip: "Request Holiday",
-          icon: const Icon(Icons.add, color: Color(0xFF4CC9F0)),
-          onPressed: _showRequestHolidayDialog,
+    return Scaffold(
+      backgroundColor: const Color(0xFF0A192F),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF172A45),
+        elevation: 0,
+        title: const Text(
+          "Holidays",
+          style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
         ),
-        IconButton(
-          tooltip: "Refresh",
-          icon: const Icon(Icons.refresh, color: Color(0xFF4CC9F0)),
-          onPressed: () async {
-            final yr = _selectedYear;
-            if (yr != null) await _fetchForYear(yr);
-            else await _fetchInitialCurrentYear();
-          },
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Color(0xFF4CC9F0)),
+          onPressed: () => Navigator.pop(context),
         ),
-      ],
-    ),
-    body: Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0xFF0A192F), Color(0xFF172A45), Color(0xFF0A192F)],
-        ),
+        actions: [
+          IconButton(
+            tooltip: "Request Holiday",
+            icon: const Icon(Icons.add, color: Color(0xFF4CC9F0)),
+            onPressed: _showRequestHolidayDialog,
+          ),
+          IconButton(
+            tooltip: "Refresh",
+            icon: const Icon(Icons.refresh, color: Color(0xFF4CC9F0)),
+            onPressed: () async {
+              final yr = _selectedYear;
+              if (yr != null) await _fetchForYear(yr);
+              else await _fetchInitialCurrentYear();
+            },
+          ),
+        ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: loading
-            ? Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const CircularProgressIndicator(color: Color(0xFF4CC9F0)),
-                    const SizedBox(height: 16),
-                    Text("Loading holidays...", style: TextStyle(color: Colors.white.withOpacity(0.7))),
-                  ],
-                ),
-              )
-            : error
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.error_outline, size: 64, color: Colors.red.withOpacity(0.7)),
-                          const SizedBox(height: 16),
-                          Text(
-                            "Error loading holidays",
-                            style: TextStyle(color: Colors.white.withOpacity(0.85), fontSize: 18),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            errorMessage,
-                            style: TextStyle(color: Colors.white.withOpacity(0.6)),
-                            textAlign: TextAlign.center,
-                          ),
-                          const SizedBox(height: 16),
-                          ElevatedButton(
-                            onPressed: _fetchInitialCurrentYear,
-                            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF4CC9F0)),
-                            child: const Text("Try Again"),
-                          ),
-                        ],
-                      ),
-                    ),
-                  )
-                : (_yearOptions.isEmpty || y == null)
-                    ? _emptyState(
-                        "No current holiday year found.\nAdd a row in HolidayYearSettings where today is inside it.",
-                      )
-                    : Column(
-                        children: [
-                          // Top section scrolls if needed + bottom list stays fixed
-                          Expanded(
-                            child: Column(
-                              children: [
-                                // Scrollable header section (selector + summary + tabs header)
-                                SingleChildScrollView(
-                                  padding: const EdgeInsets.only(bottom: 10),
-                                  child: Column(
-                                    children: [
-                                      // Year selector
-                                      Container(
-                                        padding: const EdgeInsets.all(14),
-                                        decoration: BoxDecoration(
-                                          color: Colors.white.withOpacity(0.03),
-                                          borderRadius: BorderRadius.circular(16),
-                                          border: Border.all(color: Colors.white.withOpacity(0.1)),
-                                        ),
-                                        child: DropdownButtonFormField<String>(
-                                          value: y.key,
-                                          dropdownColor: const Color(0xFF0A192F),
-                                          decoration: InputDecoration(
-                                            labelText: "Holiday Year",
-                                            labelStyle: TextStyle(color: Colors.white.withOpacity(0.7)),
-                                            enabledBorder: OutlineInputBorder(
-                                              borderRadius: BorderRadius.circular(12),
-                                              borderSide: BorderSide(color: Colors.white.withOpacity(0.15)),
-                                            ),
-                                            focusedBorder: OutlineInputBorder(
-                                              borderRadius: BorderRadius.circular(12),
-                                              borderSide: const BorderSide(color: Color(0xFF4CC9F0)),
-                                            ),
-                                          ),
-                                          style: const TextStyle(color: Colors.white),
-                                          items: _yearOptions
-                                              .map((opt) => DropdownMenuItem(
-                                                    value: opt.key,
-                                                    child: Text(opt.key),
-                                                  ))
-                                              .toList(),
-                                          onChanged: (v) async {
-                                            if (v == null) return;
-                                            final opt = _yearOptions.firstWhere((o) => o.key == v);
-                                            setState(() => _selectedYear = opt);
-                                            await _fetchForYear(opt);
-                                          },
-                                        ),
-                                      ),
-
-                                      const SizedBox(height: 12),
-
-                                      // Summary cards (2 per row)
-                                      if (s != null)
-                                        // Replace the GridView.count section in the build method:
-
-GridView.count(
-  shrinkWrap: true,
-  physics: const NeverScrollableScrollPhysics(),
-  crossAxisCount: 2,
-  mainAxisSpacing: 8,
-  crossAxisSpacing: 8,
-  childAspectRatio: 3.2, // Adjusted for better fit
-  children: [
-    _summaryCardMinimal(
-      title: "Allowance",
-      value: "${_fmt(s.allowanceDays, dp: 0)}",
-      icon: Icons.verified,
-      accent: const Color(0xFF4CC9F0),
-    ),
-    _summaryCardMinimal(
-      title: "Accrued",
-      value: _fmt(s.accruedDays),
-      icon: Icons.timeline,
-      accent: const Color(0xFF4ADE80),
-    ),
-    _summaryCardMinimal(
-      title: "Taken",
-      value: "${_fmt(s.takenPaidDays, dp: 0)}",
-      icon: Icons.check_circle,
-      accent: Colors.green,
-    ),
-    _summaryCardMinimal(
-      title: "Pending",
-      value: "${_fmt(s.pendingPaidDays, dp: 0)}",
-      icon: Icons.hourglass_top,
-      accent: Colors.orange,
-    ),
-    _summaryCardMinimal(
-      title: "Remaining",
-      value: _fmt(s.remainingYearDays),
-      icon: Icons.savings,
-      accent: const Color(0xFF4CC9F0),
-    ),
-    _summaryCardMinimal(
-      title: "Available",
-      value: _fmt(s.availableNowDays),
-      icon: Icons.lock_open,
-      accent: const Color(0xFF4ADE80),
-    ),
-  ],
-),
-
-                                      const SizedBox(height: 12),
-
-                                      // Tabs header
-                                      Container(
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFF172A45),
-                                          borderRadius: BorderRadius.circular(14),
-                                          border: Border.all(color: Colors.white.withOpacity(0.08)),
-                                        ),
-                                        child: TabBar(
-                                          controller: _tabs,
-                                          indicatorColor: const Color(0xFF4CC9F0),
-                                          labelColor: Colors.white,
-                                          unselectedLabelColor: Colors.white.withOpacity(0.6),
-                                          tabs: const [
-                                            Tab(text: "Pending"),
-                                            Tab(text: "Approved"),
-                                            Tab(text: "Declined"),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-
-                                const SizedBox(height: 10),
-
-                                // Fixed list area
-                                Expanded(
-                                  child: TabBarView(
-                                    controller: _tabs,
-                                    children: [
-                                      _buildList(_pending, emptyText: "No pending holidays in this year."),
-                                      _buildList(_approved, emptyText: "No approved holidays in this year."),
-                                      _buildList(_declined, emptyText: "No declined holidays in this year."),
-                                    ],
-                                  ),
-                                ),
-                              ],
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFF0A192F), Color(0xFF172A45), Color(0xFF0A192F)],
+          ),
+        ),
+        child: Padding(
+          padding: EdgeInsets.all(isLandscape ? 8 : 16),
+          child: loading
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const CircularProgressIndicator(color: Color(0xFF4CC9F0)),
+                      const SizedBox(height: 16),
+                      Text("Loading holidays...", style: TextStyle(color: Colors.white.withOpacity(0.7))),
+                    ],
+                  ),
+                )
+              : error
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.error_outline, size: 64, color: Colors.red.withOpacity(0.7)),
+                            const SizedBox(height: 16),
+                            Text(
+                              "Error loading holidays",
+                              style: TextStyle(color: Colors.white.withOpacity(0.85), fontSize: 18),
                             ),
-                          ),
-                        ],
+                            const SizedBox(height: 8),
+                            Text(
+                              errorMessage,
+                              style: TextStyle(color: Colors.white.withOpacity(0.6)),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 16),
+                            ElevatedButton(
+                              onPressed: _fetchInitialCurrentYear,
+                              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF4CC9F0)),
+                              child: const Text("Try Again"),
+                            ),
+                          ],
+                        ),
                       ),
-      ),
-    ),
-    bottomNavigationBar: _buildBottomNavigationBar(),
-  );
-}
+                    )
+                  : (_yearOptions.isEmpty || y == null)
+                      ? Center(
+                          child: _emptyState(
+                            "No current holiday year found.\nAdd a row in HolidayYearSettings where today is inside it.",
+                          ),
+                        )
+                      : Column(
+                          children: [
+                            // Year selector - always at top
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.03),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: Colors.white.withOpacity(0.1)),
+                              ),
+                              child: DropdownButtonFormField<String>(
+                                value: y.key,
+                                dropdownColor: const Color(0xFF0A192F),
+                                decoration: InputDecoration(
+                                  labelText: "Holiday Year",
+                                  labelStyle: TextStyle(color: Colors.white.withOpacity(0.7)),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: BorderSide(color: Colors.white.withOpacity(0.15)),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: const BorderSide(color: Color(0xFF4CC9F0)),
+                                  ),
+                                  contentPadding: EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: isLandscape ? 8 : 12,
+                                  ),
+                                ),
+                                style: const TextStyle(color: Colors.white, fontSize: 14),
+                                items: _yearOptions
+                                    .map((opt) => DropdownMenuItem(
+                                          value: opt.key,
+                                          child: Text(
+                                            opt.key,
+                                            style: const TextStyle(fontSize: 13),
+                                          ),
+                                        ))
+                                    .toList(),
+                                onChanged: (v) async {
+                                  if (v == null) return;
+                                  final opt = _yearOptions.firstWhere((o) => o.key == v);
+                                  setState(() => _selectedYear = opt);
+                                  await _fetchForYear(opt);
+                                },
+                              ),
+                            ),
 
+                            const SizedBox(height: 12),
+
+                            // Main content area - scrollable
+                            Expanded(
+                              child: SingleChildScrollView(
+                                physics: const BouncingScrollPhysics(),
+                                child: Column(
+                                  children: [
+                                    // Summary cards
+                                    if (s != null)
+                                      GridView.count(
+                                        shrinkWrap: true,
+                                        physics: const NeverScrollableScrollPhysics(),
+                                        crossAxisCount: isLandscape ? 3 : 2,
+                                        mainAxisSpacing: 6,
+                                        crossAxisSpacing: 6,
+                                        childAspectRatio: isLandscape ? 3.5 : 3.2,
+                                        children: [
+                                          _summaryCardMinimal(
+                                            title: "Allowance",
+                                            value: "${_fmt(s.allowanceDays, dp: 0)}",
+                                            icon: Icons.verified,
+                                            accent: const Color(0xFF4CC9F0),
+                                          ),
+                                          _summaryCardMinimal(
+                                            title: "Accrued",
+                                            value: _fmt(s.accruedDays),
+                                            icon: Icons.timeline,
+                                            accent: const Color(0xFF4ADE80),
+                                          ),
+                                          _summaryCardMinimal(
+                                            title: "Taken",
+                                            value: "${_fmt(s.takenPaidDays, dp: 0)}",
+                                            icon: Icons.check_circle,
+                                            accent: Colors.green,
+                                          ),
+                                          _summaryCardMinimal(
+                                            title: "Pending",
+                                            value: "${_fmt(s.pendingPaidDays, dp: 0)}",
+                                            icon: Icons.hourglass_top,
+                                            accent: Colors.orange,
+                                          ),
+                                          _summaryCardMinimal(
+                                            title: "Remaining",
+                                            value: _fmt(s.remainingYearDays),
+                                            icon: Icons.savings,
+                                            accent: const Color(0xFF4CC9F0),
+                                          ),
+                                          _summaryCardMinimal(
+                                            title: "Available",
+                                            value: _fmt(s.availableNowDays),
+                                            icon: Icons.lock_open,
+                                            accent: const Color(0xFF4ADE80),
+                                          ),
+                                        ],
+                                      ),
+
+                                    const SizedBox(height: 16),
+
+                                    // Tabs header
+                                    Container(
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF172A45),
+                                        borderRadius: BorderRadius.circular(14),
+                                        border: Border.all(color: Colors.white.withOpacity(0.08)),
+                                      ),
+                                      child: TabBar(
+                                        controller: _tabs,
+                                        indicatorColor: const Color(0xFF4CC9F0),
+                                        labelColor: Colors.white,
+                                        unselectedLabelColor: Colors.white.withOpacity(0.6),
+                                        tabs: const [
+                                          Tab(text: "Pending"),
+                                          Tab(text: "Approved"),
+                                          Tab(text: "Declined"),
+                                        ],
+                                      ),
+                                    ),
+
+                                    const SizedBox(height: 10),
+
+                                    // Tab content
+                                    Container(
+                                      height: isLandscape ? 300 : 400,
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: TabBarView(
+                                        controller: _tabs,
+                                        children: [
+                                          _buildList(_pending, emptyText: "No pending holidays in this year."),
+                                          _buildList(_approved, emptyText: "No approved holidays in this year."),
+                                          _buildList(_declined, emptyText: "No declined holidays in this year."),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+        ),
+      ),
+      bottomNavigationBar: _buildBottomNavigationBar(),
+    );
+  }
 
   Widget _buildList(List<HolidayItem> list, {required String emptyText}) {
-    if (list.isEmpty) return _emptyState(emptyText);
+    if (list.isEmpty) {
+      return Center(child: _emptyState(emptyText));
+    }
     return ListView.builder(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(8),
       itemCount: list.length,
       itemBuilder: (_, i) => _holidayCard(list[i]),
     );
   }
 
-  // ---------- Bottom nav ----------
   Widget _buildBottomNavigationBar() {
+    final screenSize = MediaQuery.of(context).size;
+    final bool isTablet = screenSize.width > 600;
+    
     return Container(
-      height: 70,
+      height: isTablet ? 80 : 70,
       decoration: BoxDecoration(
         color: const Color(0xFF172A45),
         border: Border(top: BorderSide(color: Colors.white.withOpacity(0.1), width: 1)),
@@ -1032,9 +1011,14 @@ GridView.count(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(icon, color: Colors.white.withOpacity(0.7), size: 24),
-                const SizedBox(height: 4),
-                Text(label, style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.7))),
+                Icon(icon, color: Colors.white.withOpacity(0.7), size: 22),
+                const SizedBox(height: 2),
+                Text(
+                  label,
+                  style: const TextStyle(fontSize: 11, color: Colors.white70),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
               ],
             ),
           ),
@@ -1055,10 +1039,15 @@ GridView.count(
               shape: BoxShape.circle,
               color: const Color(0xFF4CC9F0).withOpacity(0.2),
             ),
-            child: Icon(icon, color: const Color(0xFF4CC9F0), size: 24),
+            child: Icon(icon, color: const Color(0xFF4CC9F0), size: 22),
           ),
-          const SizedBox(height: 4),
-          Text(label, style: const TextStyle(fontSize: 12, color: Color(0xFF4CC9F0), fontWeight: FontWeight.bold)),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: const TextStyle(fontSize: 11, color: Color(0xFF4CC9F0), fontWeight: FontWeight.bold),
+            overflow: TextOverflow.ellipsis,
+            maxLines: 1,
+          ),
         ],
       ),
     );
@@ -1070,21 +1059,25 @@ GridView.count(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Container(
-            width: 50,
-            height: 50,
+            width: 45,
+            height: 45,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: const LinearGradient(colors: [Color(0xFF4CC9F0), Color(0xFF1E3A5F)]),
               boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 4))],
             ),
             child: IconButton(
-              icon: const Icon(Icons.home, size: 28),
+              icon: const Icon(Icons.home, size: 24),
               color: Colors.white,
               onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst),
+              padding: EdgeInsets.zero,
             ),
           ),
           const SizedBox(height: 2),
-          Text('Home', style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.7))),
+          const Text(
+            'Home',
+            style: TextStyle(fontSize: 11, color: Colors.white70),
+          ),
         ],
       ),
     );
