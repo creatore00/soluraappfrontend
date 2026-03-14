@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "625907295246",
+    "project_id": "solura-318fd",
+    "storage_bucket": "solura-318fd.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:625907295246:android:1aa6363e2ca29622f4085f",
+        "android_client_info": {
+          "package_name": "com.example.solura_app_new"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDzfh8IC_DbL8phUhbdGiH86Ykg6KGXZAc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

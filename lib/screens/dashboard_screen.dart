@@ -18,6 +18,7 @@ import 'holidays_screen.dart';
 import 'holiday_requests_screen.dart';
 import 'hours_summary_screen.dart';
 import 'login_screen.dart';
+import 'all_rota_screen.dart';
 import 'notifications_screen.dart';
 import 'shift_requests_screen.dart';
 import 'feed_screen.dart';
@@ -1767,6 +1768,22 @@ class _DashboardScreenState extends State<DashboardScreen>
                                 userEmail: widget.email,
                                 userName: displayName,
                                 userDesignation: (employeeDesignation ?? "").trim(),
+                              ),
+                            ),
+                          );
+                        },
+                      ),  
+                      _DrawerTile(
+                        icon: Icons.calendar_month,
+                        title: 'All Rota',
+                        onTap: () {
+                          Navigator.pop(context); // Chiudi il drawer
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => AllRotaScreen(
+                                email: widget.email,
+                                selectedDb: currentDb,
                               ),
                             ),
                           );
