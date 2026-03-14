@@ -8,13 +8,14 @@
 // - Wage hidden with show/hide
 // - Salary=Yes => show SalaryPrice instead of wage
 // - dateStart yyyy-mm-dd -> dd/mm/yyyy
+// - Added: Change Password link that opens browser to https://www.solura.uk/ForgotPassword
 // ==================================
 import 'dart:convert';
 import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/database_access.dart';
 import '../services/auth_service.dart';
@@ -99,6 +100,67 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
       return null;
     }
   }
+
+  Future<void> _openChangePassword() async {
+  const url = 'https://www.solura.uk/ForgotPassword';
+  final uri = Uri.parse(url);
+  
+  try {
+    // Try to launch directly first (more reliable on some devices)
+    try {
+      await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+        webOnlyWindowName: '_blank',
+      );
+      return; // Success, exit function
+    } catch (e) {
+      print('First launch attempt failed: $e');
+      // Continue to fallback methods
+    }
+    
+    // Fallback 1: Try with platform default
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+      return;
+    }
+    
+    // Fallback 2: Try with WebView (if available)
+    await launchUrl(
+      uri,
+      mode: LaunchMode.platformDefault,
+    );
+    
+  } catch (e) {
+    print('Error opening link: $e');
+    
+    if (!mounted) return;
+    
+    // Show more helpful error message
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Cannot open browser. Please visit:\n$url'),
+        backgroundColor: Colors.orange,
+        duration: const Duration(seconds: 5),
+        action: SnackBarAction(
+          label: 'COPY',
+          textColor: Colors.white,
+          onPressed: () {
+            // Copy URL to clipboard
+            // You'll need to add: import 'package:flutter/services.dart';
+            // Clipboard.setData(ClipboardData(text: url));
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('URL copied to clipboard'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
 
   Future<void> fetchProfile() async {
     if (!mounted) return;
@@ -510,6 +572,26 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                           _field(label: "Address", controller: addressCtrl, maxLines: 2),
 
                           const SizedBox(height: 14),
+
+                          // Change Password Link
+                          Container(
+                            width: double.infinity,
+                            margin: const EdgeInsets.only(bottom: 16),
+                            child: ElevatedButton.icon(
+                              onPressed: _openChangePassword,
+                              icon: const Icon(Icons.lock_outline, size: 18),
+                              label: const Text("Change Password"),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.transparent,
+                                foregroundColor: const Color(0xFF4CC9F0),
+                                side: BorderSide(color: const Color(0xFF4CC9F0).withOpacity(0.5)),
+                                minimumSize: const Size(double.infinity, 48),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                            ),
+                          ),
 
                           // Read-only fields
                           _readonlyLine("Designation", designation),

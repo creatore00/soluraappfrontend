@@ -4,6 +4,7 @@
 // - Fetches holidays for selected year via yearStart/yearEnd query params
 // - Default tab = Approved
 // - Fixes summary card overflow for small screens and landscape mode
+// - Notifications: when a holiday is requested, AM and Manager receive push notification
 // ==================================
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -15,6 +16,7 @@ import 'hours_summary_screen.dart';
 import 'all_rota_screen.dart';
 import 'earnings_screen.dart';
 import 'package:intl/intl.dart';
+import '../services/notifications_service.dart';
 
 class HolidaysScreen extends StatefulWidget {
   final String email;
@@ -605,6 +607,54 @@ class _HolidaysScreenState extends State<HolidaysScreen> with SingleTickerProvid
     );
   }
 
+  // 🔔 FUNZIONE PER INVIARE NOTIFICHE PUSH AI MANAGER (UNA SOLA NOTIFICA)
+  Future<void> _sendHolidayRequestNotification() async {
+    try {
+      print('📱 Sending holiday request notification to AM and Manager');
+      
+      // Formatta le date in un formato leggibile
+      final now = DateTime.now();
+      final formattedDate = DateFormat('dd/MM/yyyy').format(now);
+      
+      // Crea un solo messaggio con nome e date
+      final message = 'New holiday request for ${_formatDateRange(_tempStartDate, _tempEndDate)}';
+      
+      // Invia un'unica notifica push a entrambi i ruoli
+      // Il backend invierà a tutti i dispositivi con ruolo AM o Manager
+      await NotificationsService.sendPushNotification(
+        db: widget.selectedDb.dbName,
+        targetEmail: '',
+        targetRole: 'ALL', // Invia a tutti (poi filtriamo nel backend)
+        title: 'New Holiday Request',
+        message: message,
+        type: 'HOLIDAY',
+      );
+      
+      print('✅ Holiday request notification sent');
+    } catch (e) {
+      print('❌ Error sending holiday request notification: $e');
+    }
+  }
+
+  // Variabili temporanee per salvare le date durante la richiesta
+  String _tempStartDate = '';
+  String _tempEndDate = '';
+
+  String _formatDateRange(String start, String end) {
+    try {
+      final startParts = start.split('-');
+      final endParts = end.split('-');
+      if (startParts.length == 3 && endParts.length == 3) {
+        final startDate = '${startParts[2]}/${startParts[1]}/${startParts[0]}';
+        final endDate = '${endParts[2]}/${endParts[1]}/${endParts[0]}';
+        return '$startDate - $endDate';
+      }
+    } catch (e) {
+      print('Error formatting dates: $e');
+    }
+    return '$start to $end';
+  }
+
   Future<void> _submitHolidayRequest({
     required String startDate,
     required String endDate,
@@ -616,6 +666,10 @@ class _HolidaysScreenState extends State<HolidaysScreen> with SingleTickerProvid
         loading = true;
         error = false;
       });
+
+      // Salva le date per la notifica
+      _tempStartDate = startDate;
+      _tempEndDate = endDate;
 
       final uri = Uri.parse("${AuthService.baseUrl}/holidays/request");
 
@@ -644,6 +698,9 @@ class _HolidaysScreenState extends State<HolidaysScreen> with SingleTickerProvid
       if (response.statusCode != 200 || data["success"] != true) {
         throw Exception(data["message"] ?? "Failed to submit holiday request");
       }
+
+      // 🔔 DOPO IL SUCCESSO, INVIA NOTIFICHE PUSH AI MANAGER (UNA SOLA NOTIFICA)
+      await _sendHolidayRequestNotification();
 
       if (!mounted) return;
 

@@ -44,6 +44,7 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   // Clock + date
   Timer? _timer;
+  Timer? _refreshTimer; // Timer per refresh automatico ogni minuto
   String appBarDateText = '';
 
   // Employee
@@ -96,10 +97,24 @@ class _DashboardScreenState extends State<DashboardScreen>
       _updateAppBarDate();
     });
 
+    // Timer per refresh automatico ogni minuto
+    _refreshTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (!mounted) return;
+      _autoRefresh();
+    });
+
     // init AFTER first frame (prevents "build scheduled during frame")
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializeData();
     });
+  }
+
+  // Auto refresh function
+  Future<void> _autoRefresh() async {
+    if (_initializing) return;
+    print('🔄 Auto-refreshing dashboard...');
+    await _loadUnreadCount();
+    await _fetchWeeklyRota();
   }
 
   // -----------------------------
@@ -121,19 +136,11 @@ class _DashboardScreenState extends State<DashboardScreen>
   // -----------------------------
   // DB options + init
   // -----------------------------
-  // Replace the _dbOptions getter in _DashboardScreenState:
-
-List<DatabaseAccess> get _dbOptions {
-  // First check widget databases
-  if (widget.databases.isNotEmpty) return widget.databases;
-  
-  // Then check Session databases
-  if (Session.databases.isNotEmpty) return Session.databases;
-  
-  // If both are empty, create a list with just the current DB
-  // This ensures the workspace button still shows when there are multiple options
-  return [currentDb];
-}
+  List<DatabaseAccess> get _dbOptions {
+    if (widget.databases.isNotEmpty) return widget.databases;
+    if (Session.databases.isNotEmpty) return Session.databases;
+    return [currentDb];
+  }
 
   Future<void> _persistSelectedDb(DatabaseAccess db) async {
     Session.db = db.dbName;
@@ -243,14 +250,17 @@ List<DatabaseAccess> get _dbOptions {
     setState(() => loadingUnread = true);
 
     try {
+      print('📊 Fetching unread count for role: $role, db: ${currentDb.dbName}');
       final count = await NotificationsService.fetchUnreadCount(
         db: currentDb.dbName,
         role: role,
       );
+      print('📊 Unread count response: $count');
+      
       if (!mounted) return;
       setState(() => unreadCount = count);
     } catch (e) {
-      // keep it clean: no red screens, just ignore
+      print('❌ Error loading unread count: $e');
     } finally {
       if (mounted) setState(() => loadingUnread = false);
     }
@@ -263,7 +273,9 @@ List<DatabaseAccess> get _dbOptions {
       return;
     }
 
-    await Navigator.push(
+    print('📱 Opening notifications screen...');
+    
+    final shouldRefresh = await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => NotificationsScreen(
@@ -273,7 +285,13 @@ List<DatabaseAccess> get _dbOptions {
       ),
     );
 
+    print('📱 Returned from notifications with shouldRefresh: $shouldRefresh');
+    
     await _loadUnreadCount();
+    
+    if (shouldRefresh == true) {
+      print('✅ Notifications were updated, refreshing dashboard...');
+    }
   }
 
   // -----------------------------
@@ -305,7 +323,6 @@ List<DatabaseAccess> get _dbOptions {
         ? DateFormat('dd/MM/yyyy').format(lastReminderDate!)
         : null;
 
-    // Only show reminder if today has NO scheduled shift
     if (last != todayStr && !hasScheduledShiftToday) {
       if (!mounted) return;
       setState(() => showClockInReminder = true);
@@ -333,7 +350,6 @@ List<DatabaseAccess> get _dbOptions {
 
   // -----------------------------
   // Weekly rota (GET /rota)
-  // day stored as "dd/MM/yyyy (Day)"
   // -----------------------------
   Future<void> _fetchWeeklyRota() async {
     if (loadingRota) return;
@@ -458,7 +474,7 @@ List<DatabaseAccess> get _dbOptions {
   }
 
   // -----------------------------
-  // EDIT SCHEDULE (ONLY if shift exists today)
+  // EDIT SCHEDULE
   // -----------------------------
   List<_ShiftFrame> _getTodayShiftFrames() {
     final todayStr = DateFormat('dd/MM/yyyy').format(DateTime.now());
@@ -907,93 +923,93 @@ List<DatabaseAccess> get _dbOptions {
   // Drawer + logout + settings
   // -----------------------------
   Future<void> _showDbPicker() async {
-  final options = _dbOptions; // This now uses the updated getter
-  if (options.length <= 1) return;
+    final options = _dbOptions;
+    if (options.length <= 1) return;
 
-  await showModalBottomSheet(
-    context: context,
-    backgroundColor: const Color(0xFF0A192F),
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-    ),
-    builder: (_) {
-      return SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 46,
-                height: 5,
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(99),
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF0A192F),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 46,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(99),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  const Icon(Icons.apartment, color: Color(0xFF4CC9F0)),
-                  const SizedBox(width: 10),
-                  const Text(
-                    "Select workspace",
-                    style: TextStyle(
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    const Icon(Icons.apartment, color: Color(0xFF4CC9F0)),
+                    const SizedBox(width: 10),
+                    const Text(
+                      "Select workspace",
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold),
+                    ),
+                    const Spacer(),
+                    Text(
+                      currentDb.dbName,
+                      style: TextStyle(
+                          color: Colors.white.withOpacity(0.6), fontSize: 12),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                ...options.map((db) {
+                  final isSelected = db.dbName == currentDb.dbName;
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: CircleAvatar(
+                      radius: 18,
+                      backgroundColor: isSelected
+                          ? const Color(0xFF4CC9F0)
+                          : Colors.white.withOpacity(0.10),
+                      child: Icon(
+                        isSelected ? Icons.check : Icons.storage,
+                        color: isSelected
+                            ? Colors.white
+                            : Colors.white.withOpacity(0.8),
+                        size: 18,
+                      ),
+                    ),
+                    title: Text(
+                      db.dbName,
+                      style: TextStyle(
                         color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold),
-                  ),
-                  const Spacer(),
-                  Text(
-                    currentDb.dbName,
-                    style: TextStyle(
-                        color: Colors.white.withOpacity(0.6), fontSize: 12),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              ...options.map((db) {
-                final isSelected = db.dbName == currentDb.dbName;
-                return ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: CircleAvatar(
-                    radius: 18,
-                    backgroundColor: isSelected
-                        ? const Color(0xFF4CC9F0)
-                        : Colors.white.withOpacity(0.10),
-                    child: Icon(
-                      isSelected ? Icons.check : Icons.storage,
-                      color: isSelected
-                          ? Colors.white
-                          : Colors.white.withOpacity(0.8),
-                      size: 18,
+                        fontWeight:
+                            isSelected ? FontWeight.bold : FontWeight.w500,
+                      ),
                     ),
-                  ),
-                  title: Text(
-                    db.dbName,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight:
-                          isSelected ? FontWeight.bold : FontWeight.w500,
-                    ),
-                  ),
-                  trailing: isSelected
-                      ? const Icon(Icons.verified, color: Color(0xFF4ADE80))
-                      : Icon(Icons.chevron_right,
-                          color: Colors.white.withOpacity(0.35)),
-                  onTap: () async {
-                    Navigator.pop(context);
-                    await switchDatabase(db);
-                  },
-                );
-              }),
-            ],
+                    trailing: isSelected
+                        ? const Icon(Icons.verified, color: Color(0xFF4ADE80))
+                        : Icon(Icons.chevron_right,
+                            color: Colors.white.withOpacity(0.35)),
+                    onTap: () async {
+                      Navigator.pop(context);
+                      await switchDatabase(db);
+                    },
+                  );
+                }),
+              ],
+            ),
           ),
-        ),
-      );
-    },
-  );
-}
+        );
+      },
+    );
+  }
 
   Future<void> _logout() async {
     try {
@@ -1255,17 +1271,10 @@ List<DatabaseAccess> get _dbOptions {
                     fontWeight: FontWeight.bold),
               ),
               const Spacer(),
-              TextButton.icon(
-                onPressed: _fetchWeeklyRota,
-                icon: const Icon(Icons.refresh,
-                    size: 18, color: Color(0xFF4CC9F0)),
-                label: const Text("Refresh",
-                    style: TextStyle(color: Color(0xFF4CC9F0))),
-              ),
+              // Refresh button rimosso perché ora si aggiorna automaticamente
             ],
           ),
           const SizedBox(height: 10),
-          // Table header with better spacing
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
             decoration: BoxDecoration(
@@ -1282,7 +1291,6 @@ List<DatabaseAccess> get _dbOptions {
             ),
           ),
           const SizedBox(height: 8),
-          // Table rows
           ...weekRota.map((row) {
             final isToday = row.dateStr == todayStr;
 
@@ -1314,7 +1322,6 @@ List<DatabaseAccess> get _dbOptions {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Day column
                   Expanded(
                     flex: 5,
                     child: Row(
@@ -1358,7 +1365,6 @@ List<DatabaseAccess> get _dbOptions {
                       ],
                     ),
                   ),
-                  // Shifts column
                   Expanded(
                     flex: 4,
                     child: Padding(
@@ -1377,7 +1383,6 @@ List<DatabaseAccess> get _dbOptions {
                       ),
                     ),
                   ),
-                  // Total column
                   Expanded(
                     flex: 2,
                     child: Text(
@@ -1460,77 +1465,74 @@ List<DatabaseAccess> get _dbOptions {
   }
 
   // -----------------------------
-  // Bottom Navigation Bar with FEED
+  // Bottom Navigation Bar
   // -----------------------------
   Widget _buildBottomNavigationBar() {
-    return SafeArea(
-      top: false,
-      child: Container(
-        height: 70,
-        decoration: BoxDecoration(
-          color: const Color(0xFF172A45),
-          border: Border(
-            top: BorderSide(color: Colors.white.withOpacity(0.10), width: 1),
-          ),
+    return Container(
+      height: 70,
+      decoration: BoxDecoration(
+        color: const Color(0xFF172A45),
+        border: Border(
+          top: BorderSide(color: Colors.white.withOpacity(0.10), width: 1),
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            _buildNavItem(
-              icon: Icons.access_time,
-              label: 'Hours',
-              onTap: () {
-                if (employeeName != null && employeeLastName != null) {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => HoursSummaryScreen(
-                        email: widget.email,
-                        selectedDb: currentDb,
-                        employeeName: employeeName!,
-                        employeeLastName: employeeLastName!,
-                      ),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          _buildNavItem(
+            icon: Icons.access_time,
+            label: 'Hours',
+            onTap: () {
+              if (employeeName != null && employeeLastName != null) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => HoursSummaryScreen(
+                      email: widget.email,
+                      selectedDb: currentDb,
+                      employeeName: employeeName!,
+                      employeeLastName: employeeLastName!,
                     ),
-                  );
-                } else {
-                  _showErrorSnack("Loading employee info...");
-                }
-              },
-            ),
-            _buildNavItem(
-              icon: Icons.dynamic_feed,
-              label: 'Feed',
-              onTap: _openFeed,
-            ),
-            _buildHomeButton(),
-            _buildNavItem(
-              icon: Icons.beach_access,
-              label: 'Holidays',
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) =>
-                        HolidaysScreen(email: widget.email, selectedDb: currentDb),
                   ),
                 );
-              },
-            ),
-            _buildNavItem(
-              icon: Icons.attach_money,
-              label: 'Earnings',
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) =>
-                        EarningsScreen(email: widget.email, selectedDb: currentDb),
-                  ),
-                );
-              },
-            ),
-          ],
-        ),
+              } else {
+                _showErrorSnack("Loading employee info...");
+              }
+            },
+          ),
+          _buildNavItem(
+            icon: Icons.dynamic_feed,
+            label: 'Feed',
+            onTap: _openFeed,
+          ),
+          _buildHomeButton(),
+          _buildNavItem(
+            icon: Icons.beach_access,
+            label: 'Holidays',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      HolidaysScreen(email: widget.email, selectedDb: currentDb),
+                ),
+              );
+            },
+          ),
+          _buildNavItem(
+            icon: Icons.attach_money,
+            label: 'Earnings',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      EarningsScreen(email: widget.email, selectedDb: currentDb),
+                ),
+              );
+            },
+          ),
+        ],
       ),
     );
   }
@@ -1617,6 +1619,7 @@ List<DatabaseAccess> get _dbOptions {
   @override
   void dispose() {
     _timer?.cancel();
+    _refreshTimer?.cancel(); // Cancella il timer di refresh
     _welcomeController.dispose();
     super.dispose();
   }
@@ -1642,177 +1645,173 @@ List<DatabaseAccess> get _dbOptions {
 
     return Scaffold(
       backgroundColor: const Color(0xFF0A192F),
-      // Replace the drawer section in the build method with this:
-
-drawer: Drawer(
-  backgroundColor: const Color(0xFF0A192F),
-  width: MediaQuery.of(context).size.width * 0.8,
-  child: SafeArea(
-    bottom: true,
-    child: Column(
-      children: [
-        Expanded(
-          child: SingleChildScrollView(
-            physics: const BouncingScrollPhysics(),
-            child: Column(
-              children: [
-                // Custom header instead of DrawerHeader for better control
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.fromLTRB(16, 24, 16, 20),
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Color(0xFF1E3A5F), Color(0xFF0A192F)],
-                    ),
-                  ),
+      drawer: Drawer(
+        backgroundColor: const Color(0xFF0A192F),
+        width: MediaQuery.of(context).size.width * 0.8,
+        child: SafeArea(
+          bottom: true,
+          child: Column(
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      CircleAvatar(
-                        radius: 32,
-                        backgroundColor: const Color(0xFF4CC9F0),
-                        backgroundImage: _profileImageBytes != null
-                            ? MemoryImage(_profileImageBytes!)
-                            : null,
-                        child: _profileImageBytes == null
-                            ? Text(
-                                initials,
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : null,
-                      ),
-                      const SizedBox(height: 16),
-                      const Text(
-                        'Solura',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      // Email with proper overflow handling
                       Container(
-                        constraints: BoxConstraints(
-                          maxWidth: MediaQuery.of(context).size.width * 0.7,
-                        ),
-                        child: Text(
-                          widget.email,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: Colors.white.withOpacity(0.7),
-                            fontSize: 13,
+                        width: double.infinity,
+                        padding: const EdgeInsets.fromLTRB(16, 24, 16, 20),
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [Color(0xFF1E3A5F), Color(0xFF0A192F)],
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        "Workspace: ${currentDb.dbName}",
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.55),
-                          fontSize: 12,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            CircleAvatar(
+                              radius: 32,
+                              backgroundColor: const Color(0xFF4CC9F0),
+                              backgroundImage: _profileImageBytes != null
+                                  ? MemoryImage(_profileImageBytes!)
+                                  : null,
+                              child: _profileImageBytes == null
+                                  ? Text(
+                                      initials,
+                                      style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : null,
+                            ),
+                            const SizedBox(height: 16),
+                            const Text(
+                              'Solura',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Container(
+                              constraints: BoxConstraints(
+                                maxWidth: MediaQuery.of(context).size.width * 0.7,
+                              ),
+                              child: Text(
+                                widget.email,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.7),
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              "Workspace: ${currentDb.dbName}",
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.55),
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
                         ),
+                      ),
+                      _DrawerTile(
+                        icon: Icons.person,
+                        title: 'Profile',
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => EmployeeProfileScreen(
+                                selectedDb: currentDb,
+                                userEmail: widget.email,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                      _DrawerTile(
+                        icon: Icons.people,
+                        title: 'Employees',
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => EmployeesScreen(
+                                selectedDb: currentDb,
+                                userEmail: widget.email,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                      _DrawerTile(
+                        icon: Icons.work_outline,
+                        title: 'Shift Requests',
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => ShiftRequestsScreen(
+                                selectedDb: currentDb,
+                                userEmail: widget.email,
+                                userName: displayName,
+                                userDesignation: (employeeDesignation ?? "").trim(),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                      if (canSeeHolidayRequests)
+                        _DrawerTile(
+                          icon: Icons.assignment,
+                          title: "Holiday Requests",
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => HolidayRequestsScreen(
+                                  selectedDb: currentDb,
+                                  role: Session.role ?? "",
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      _DrawerTile(
+                        icon: Icons.settings,
+                        title: 'Settings',
+                        onTap: () {
+                          Navigator.pop(context);
+                          _openSettingsPlaceholder();
+                        },
+                      ),
+                      const Divider(color: Color(0xFF1E3A5F)),
+                      _DrawerTile(
+                        icon: Icons.logout,
+                        title: 'Logout',
+                        color: Colors.redAccent,
+                        onTap: _logout,
                       ),
                     ],
                   ),
                 ),
-                _DrawerTile(
-                  icon: Icons.person,
-                  title: 'Profile',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => EmployeeProfileScreen(
-                          selectedDb: currentDb,
-                          userEmail: widget.email,
-                        ),
-                      ),
-                    );
-                  },
-                ),
-                _DrawerTile(
-                  icon: Icons.people,
-                  title: 'Employees',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => EmployeesScreen(
-                          selectedDb: currentDb,
-                          userEmail: widget.email,
-                        ),
-                      ),
-                    );
-                  },
-                ),
-                _DrawerTile(
-                  icon: Icons.work_outline,
-                  title: 'Shift Requests',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => ShiftRequestsScreen(
-                          selectedDb: currentDb,
-                          userEmail: widget.email,
-                          userName: displayName,
-                          userDesignation: (employeeDesignation ?? "").trim(),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-                if (canSeeHolidayRequests)
-                  _DrawerTile(
-                    icon: Icons.assignment,
-                    title: "Holiday Requests",
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => HolidayRequestsScreen(
-                            selectedDb: currentDb,
-                            role: Session.role ?? "",
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                _DrawerTile(
-                  icon: Icons.settings,
-                  title: 'Settings',
-                  onTap: () {
-                    Navigator.pop(context);
-                    _openSettingsPlaceholder();
-                  },
-                ),
-                const Divider(color: Color(0xFF1E3A5F)),
-                _DrawerTile(
-                  icon: Icons.logout,
-                  title: 'Logout',
-                  color: Colors.redAccent,
-                  onTap: _logout,
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
-      ],
-    ),
-  ),
-),
+      ),
       appBar: AppBar(
         backgroundColor: const Color(0xFF172A45),
         elevation: 0,
@@ -1871,49 +1870,39 @@ drawer: Drawer(
               ],
             ),
           ),
-          IconButton(
-            icon: const Icon(Icons.refresh, color: Color(0xFF4CC9F0)),
-            onPressed: () async {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                    content: Text("Refreshing..."),
-                    backgroundColor: Color(0xFF4CC9F0)),
-              );
-              await _initializeData();
-            },
-            tooltip: 'Refresh',
-          ),
           const SizedBox(width: 6),
         ],
       ),
-      body: SafeArea(
-        top: false,
-        bottom: false,
-        child: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [Color(0xFF0A192F), Color(0xFF172A45), Color(0xFF0A192F)],
-            ),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: SingleChildScrollView(
-              physics: const BouncingScrollPhysics(),
-              child: Column(
-                children: [
-                  _buildClockInReminder(),
-                  _buildTodayCard(),
-                  _buildMyRotaTable(),
-                  const SizedBox(height: 8),
-                ],
+      body: Column(
+        children: [
+          Expanded(
+            child: Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Color(0xFF0A192F), Color(0xFF172A45), Color(0xFF0A192F)],
+                ),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  child: Column(
+                    children: [
+                      _buildClockInReminder(),
+                      _buildTodayCard(),
+                      _buildMyRotaTable(),
+                      const SizedBox(height: 8),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),
-        ),
+          _buildBottomNavigationBar(),
+        ],
       ),
-      bottomNavigationBar: _buildBottomNavigationBar(),
     );
   }
 }
@@ -1921,8 +1910,6 @@ drawer: Drawer(
 // -----------------------------
 // Shared widgets + models
 // -----------------------------
-// Replace the _DrawerTile class with this more compact version:
-
 class _DrawerTile extends StatelessWidget {
   final IconData icon;
   final String title;

@@ -6,12 +6,14 @@ class AuthResult {
   final bool success;
   final String message;
   final String? email;
+  final String? userId;  // ← AGGIUNGI
   final List<DatabaseAccess> databases;
 
   AuthResult({
     required this.success,
     required this.message,
     this.email,
+    this.userId,  // ← AGGIUNGI
     required this.databases,
   });
 }
@@ -46,10 +48,13 @@ class AuthService {
           .toList()
           .cast<DatabaseAccess>();
 
+      print('✅ Login success - Email: ${data["email"]}, UserId: ${data["userId"]}'); // ← LOG
+
       return AuthResult(
         success: true,
         message: data["message"] ?? "Login successful",
         email: data["email"],
+        userId: data["userId"]?.toString(), // ← AGGIUNGI (converti in stringa se necessario)
         databases: databases,
       );
     } catch (e) {

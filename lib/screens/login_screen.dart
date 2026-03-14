@@ -5,8 +5,10 @@ import '../services/notification_service.dart';
 import '../models/database_access.dart';
 import 'database_selection_screen.dart';
 import 'dashboard_screen.dart';
+import '../services/session.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:local_auth/local_auth.dart';
+import '../services/device_registration_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -35,17 +37,6 @@ class _LoginScreenState extends State<LoginScreen> {
   void initState() {
     super.initState();
     _tryAutoBiometricLogin();
-  }
-
-  Future<void> _sendLoginNotifications() async {
-    try {
-      final notificationService = NotificationService();
-      await notificationService.init();
-      await notificationService.scheduleLoginNotifications();
-      print('✅ Login notifications scheduled successfully');
-    } catch (e) {
-      print('❌ Error scheduling notifications: $e');
-    }
   }
 
   Future<void> _tryAutoBiometricLogin() async {
@@ -90,10 +81,7 @@ class _LoginScreenState extends State<LoginScreen> {
         setState(() => message = result.message);
         return;
       }
-
-      // Send welcome notifications after successful auto login
-      await _sendLoginNotifications();
-
+      Session.userId = result.userId;
       _navigateAfterLogin(savedEmail, result.databases);
     } catch (e) {
       print("Auto biometric error: $e");
@@ -220,36 +208,37 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> handleLogin() async {
     final email = emailController.text.trim();
-    final password = passwordController.text;
+  final password = passwordController.text;
 
-    if (email.isEmpty || password.isEmpty) {
-      setState(() => message = "Please enter your email and password.");
+  if (email.isEmpty || password.isEmpty) {
+    setState(() => message = "Please enter your email and password.");
+    return;
+  }
+
+  setState(() {
+    loading = true;
+    message = "";
+  });
+
+  try {
+    final result = await AuthService.login(email, password);
+    if (!mounted) return;
+    setState(() => loading = false);
+
+    if (!result.success) {
+      setState(() => message = result.message);
       return;
     }
 
-    setState(() {
-      loading = true;
-      message = "";
-    });
+    if (result.databases.isEmpty) {
+      setState(() => message = "No workspaces available for this user.");
+      return;
+    }
 
-    try {
-      final result = await AuthService.login(email, password);
-      if (!mounted) return;
-      setState(() => loading = false);
-
-      if (!result.success) {
-        setState(() => message = result.message);
-        return;
-      }
-
-      if (result.databases.isEmpty) {
-        setState(() => message = "No workspaces available for this user.");
-        return;
-      }
-
-      // Send welcome notifications after successful login
-      await _sendLoginNotifications();
-
+    // 🟢 SALVA userId NELLA SESSIONE PRIMA DI TUTTO!
+    print('📝 Salvando userId: ${result.userId}');
+    Session.userId = result.userId;  // ← QUESTO È FONDAMENTALE!
+    
       // Check if biometrics are available on the device
       final biometricsAvailable = await _checkBiometricAvailability();
       
@@ -327,47 +316,60 @@ class _LoginScreenState extends State<LoginScreen> {
 
   void _navigateAfterLogin(String email, List<DatabaseAccess> databases) {
     if (!mounted) return;
-    if (databases.length == 1) {
-      Navigator.pushReplacement(
-        context,
-        PageRouteBuilder(
-          pageBuilder: (context, animation, secondaryAnimation) => DashboardScreen(
-            email: email,
-            databases: databases,
-            selectedDb: databases.first,
-          ),
-          transitionsBuilder: (context, animation, secondaryAnimation, child) {
-            const begin = Offset(1.0, 0.0);
-            const end = Offset.zero;
-            const curve = Curves.easeInOut;
-            var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
-            return SlideTransition(
-              position: animation.drive(tween),
-              child: child,
-            );
-          },
+      if (databases.length == 1) {
+    // CASO 1: Un solo database - registra il dispositivo QUI
+    final selectedDb = databases.first;
+    
+    // Salva nella sessione prima di registrare
+    Session.email = email;
+    Session.db = selectedDb.dbName;
+    Session.role = selectedDb.access;
+    Session.databases = databases;
+    
+    // 🟢 REGISTRA IL DISPOSITIVO PRIMA DI NAVIGARE
+    DeviceRegistrationService.registerCurrentDevice();
+    DeviceRegistrationService.listenForTokenRefresh();
+       Navigator.pushReplacement(
+      context,
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) => DashboardScreen(
+          email: email,
+          databases: databases,
+          selectedDb: selectedDb,
         ),
-      );
-    } else {
-      Navigator.pushReplacement(
-        context,
-        PageRouteBuilder(
-          pageBuilder: (context, animation, secondaryAnimation) =>
-              DatabaseSelectionScreen(email: email, databases: databases),
-          transitionsBuilder: (context, animation, secondaryAnimation, child) {
-            const begin = Offset(1.0, 0.0);
-            const end = Offset.zero;
-            const curve = Curves.easeInOut;
-            var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
-            return SlideTransition(
-              position: animation.drive(tween),
-              child: child,
-            );
-          },
-        ),
-      );
-    }
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          const begin = Offset(1.0, 0.0);
+          const end = Offset.zero;
+          const curve = Curves.easeInOut;
+          var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
+          return SlideTransition(
+            position: animation.drive(tween),
+            child: child,
+          );
+        },
+      ),
+    );
+  } else {
+    // CASO 2: Multipli database - la registrazione avverrà in DatabaseSelectionScreen
+    Navigator.pushReplacement(
+      context,
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            DatabaseSelectionScreen(email: email, databases: databases),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          const begin = Offset(1.0, 0.0);
+          const end = Offset.zero;
+          const curve = Curves.easeInOut;
+          var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
+          return SlideTransition(
+            position: animation.drive(tween),
+            child: child,
+          );
+        },
+      ),
+    );
   }
+}
 
   @override
   void dispose() {

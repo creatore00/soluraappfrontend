@@ -1,8 +1,9 @@
+// lib/screens/database_selection_screen.dart
 import 'package:flutter/material.dart';
 import '../models/database_access.dart';
 import 'dashboard_screen.dart';
 import '../services/session.dart';
-
+import '../services/device_registration_service.dart';
 
 class DatabaseSelectionScreen extends StatelessWidget {
   final String email;
@@ -20,7 +21,10 @@ class DatabaseSelectionScreen extends StatelessWidget {
     Session.role = db.access;
     Session.databases = databases;
 
-    await Session.save(); // ✅ persists login
+    await Session.save();
+
+    DeviceRegistrationService.registerCurrentDevice();
+    DeviceRegistrationService.listenForTokenRefresh();
 
     Navigator.pushReplacement(
       context,
@@ -34,6 +38,15 @@ class DatabaseSelectionScreen extends StatelessWidget {
     );
   }
 
+  // Funzione per ottenere l'immagine corretta in base al nome del database
+  String _getImageForDatabase(String dbName) {
+    if (dbName.toLowerCase().contains('bbuona')) {
+      return 'assets/bbuona.png';
+    } else if (dbName.toLowerCase().contains('pasta') || dbName.toLowerCase().contains('100%')) {
+      return 'assets/100pasta.png';
+    }
+    return ''; // Nessuna immagine personalizzata
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -43,9 +56,9 @@ class DatabaseSelectionScreen extends StatelessWidget {
         decoration: const BoxDecoration(
           gradient: LinearGradient(
             colors: [
-              Color(0xFF061A2D), // deep matte navy
-              Color(0xFF0B2A45), // navy blue
-              Color(0xFF0E3A5C), // slightly lighter navy
+              Color(0xFF061A2D),
+              Color(0xFF0B2A45),
+              Color(0xFF0E3A5C),
             ],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
@@ -59,7 +72,6 @@ class DatabaseSelectionScreen extends StatelessWidget {
               children: [
                 const SizedBox(height: 30),
 
-                // Title
                 const Text(
                   "Select Workspace",
                   style: TextStyle(
@@ -71,7 +83,6 @@ class DatabaseSelectionScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 10),
 
-                // Subtitle
                 Text(
                   "Choose the workspace you want to access",
                   style: TextStyle(
@@ -83,7 +94,6 @@ class DatabaseSelectionScreen extends StatelessWidget {
 
                 const SizedBox(height: 30),
 
-                // List
                 Expanded(
                   child: ListView.separated(
                     physics: const BouncingScrollPhysics(),
@@ -91,6 +101,7 @@ class DatabaseSelectionScreen extends StatelessWidget {
                     separatorBuilder: (_, __) => const SizedBox(height: 14),
                     itemBuilder: (context, index) {
                       final db = databases[index];
+                      final imagePath = _getImageForDatabase(db.dbName);
 
                       return InkWell(
                         onTap: () => selectDatabase(context, db),
@@ -117,7 +128,7 @@ class DatabaseSelectionScreen extends StatelessWidget {
                             ),
                             child: Row(
                               children: [
-                                // Icon
+                                // Icon/Image
                                 Container(
                                   width: 46,
                                   height: 46,
@@ -125,11 +136,29 @@ class DatabaseSelectionScreen extends StatelessWidget {
                                     color: Colors.white.withOpacity(0.12),
                                     borderRadius: BorderRadius.circular(12),
                                   ),
-                                  child: const Icon(
-                                    Icons.workspaces_outline,
-                                    color: Colors.white,
-                                    size: 24,
-                                  ),
+                                  child: imagePath.isNotEmpty
+                                      ? ClipRRect(
+                                          borderRadius: BorderRadius.circular(12),
+                                          child: Image.asset(
+                                            imagePath,
+                                            width: 46,
+                                            height: 46,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (context, error, stackTrace) {
+                                              // Fallback all'icona di default se l'immagine non viene caricata
+                                              return const Icon(
+                                                Icons.workspaces_outline,
+                                                color: Colors.white,
+                                                size: 24,
+                                              );
+                                            },
+                                          ),
+                                        )
+                                      : const Icon(
+                                          Icons.workspaces_outline,
+                                          color: Colors.white,
+                                          size: 24,
+                                        ),
                                 ),
 
                                 const SizedBox(width: 14),
@@ -137,8 +166,7 @@ class DatabaseSelectionScreen extends StatelessWidget {
                                 // Texts
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
+                                    crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       Text(
                                         db.dbName,

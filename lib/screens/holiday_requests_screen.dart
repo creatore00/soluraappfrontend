@@ -4,6 +4,8 @@ import 'package:intl/intl.dart';
 import '../models/database_access.dart';
 import '../services/holidays_service.dart';
 import '../services/session.dart';
+import '../services/notifications_service.dart';
+import '../services/rota_service.dart'; // ← AGGIUNTO per fetchEmployeeByEmail
 
 class HolidayRequestsScreen extends StatefulWidget {
   final DatabaseAccess selectedDb;
@@ -23,6 +25,7 @@ class _HolidayRequestsScreenState extends State<HolidayRequestsScreen> {
   bool loading = true;
   bool acting = false;
   List<Map<String, dynamic>> pending = [];
+  final RotaService _rotaService = RotaService(); // ← AGGIUNTO
 
   @override
   void initState() {
@@ -104,15 +107,157 @@ class _HolidayRequestsScreenState extends State<HolidayRequestsScreen> {
     return "${DateFormat("dd/MM/yyyy (EEE)").format(ds)}  →  ${DateFormat("dd/MM/yyyy (EEE)").format(de)}";
   }
 
-  Future<void> _approve(int holidayId) async {
+  // 🔔 FUNZIONE PER TROVARE EMAIL DALLA TABELLA EMPLOYEES
+  Future<String?> _findEmployeeEmail(String name, String lastName) async {
+    try {
+      print('🔍 Cercando email per: $name $lastName');
+      
+      // Prima cerca tutti gli employees
+      final employees = await _rotaService.fetchAllEmployees(
+        db: widget.selectedDb.dbName,
+      );
+      
+      // Cerca per nome e cognome (case insensitive)
+      final matchingEmployee = employees.firstWhere(
+        (emp) => 
+          emp['name']?.toString().toLowerCase() == name.toLowerCase() &&
+          emp['lastName']?.toString().toLowerCase() == lastName.toLowerCase(),
+        orElse: () => <String, dynamic>{},
+      );
+      
+      if (matchingEmployee.isNotEmpty) {
+        final email = matchingEmployee['email']?.toString();
+        print('✅ Trovata email: $email per $name $lastName');
+        return email;
+      }
+      
+      print('⚠️ Nessuna email trovata per $name $lastName');
+      return null;
+    } catch (e) {
+      print('❌ Errore nella ricerca email: $e');
+      return null;
+    }
+  }
+
+  // 🔔 FUNZIONE PER INVIARE NOTIFICA ALL'EMPLOYEE
+  Future<void> _sendDecisionNotification({
+    required String employeeEmail,
+    required String decision, // "approved" or "declined"
+    required String employeeName,
+    required String startDate,
+    required String endDate,
+    String? managerMessage,
+  }) async {
+    try {
+      print('📱 Sending $decision notification to $employeeEmail');
+      
+      // Se l'email è placeholder, non inviare la notifica
+      if (employeeEmail == 'placeholder@email.com') {
+        print('⚠️ Skipping notification for placeholder email');
+        return;
+      }
+      
+      // Formatta le date in formato leggibile
+      final formattedStart = _formatDateForNotification(startDate);
+      final formattedEnd = _formatDateForNotification(endDate);
+      final dateRange = formattedStart == formattedEnd 
+          ? formattedStart 
+          : '$formattedStart - $formattedEnd';
+      
+      // Crea il titolo e il messaggio in base alla decisione
+      String title;
+      String message;
+      
+      if (decision == 'approved') {
+        title = '✅ Holiday Approved';
+        message = 'Your holiday request for $dateRange has been approved';
+      } else {
+        title = '❌ Holiday Declined';
+        message = 'Your holiday request for $dateRange has been declined';
+      }
+      
+      // Aggiungi il messaggio del manager se presente
+      if (managerMessage != null && managerMessage.isNotEmpty) {
+        message += '\n\nManager message: $managerMessage';
+      }
+
+      // Invia notifica push all'employee
+      await NotificationsService.sendPushNotification(
+        db: widget.selectedDb.dbName,
+        targetEmail: employeeEmail,
+        targetRole: 'EMPLOYEE',
+        title: title,
+        message: message,
+        type: 'HOLIDAY',
+      );
+      
+      print('✅ Decision notification sent to $employeeEmail');
+    } catch (e) {
+      print('❌ Error sending decision notification: $e');
+    }
+  }
+
+  String _formatDateForNotification(String dateStr) {
+    try {
+      final date = _tryParseDate(dateStr);
+      if (date != null) {
+        return DateFormat('dd/MM/yyyy').format(date);
+      }
+    } catch (e) {
+      print('Error formatting date: $e');
+    }
+    return dateStr;
+  }
+
+  Future<void> _approve(int holidayId, String employeeName, String startDate, String endDate) async {
+    // Separa nome e cognome
+    final nameParts = employeeName.split(' ');
+    final firstName = nameParts.isNotEmpty ? nameParts[0] : '';
+    final lastName = nameParts.length > 1 ? nameParts.sublist(1).join(' ') : '';
+    
+    // Cerca l'email
+    final employeeEmail = await _findEmployeeEmail(firstName, lastName);
+    
+    if (employeeEmail == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Could not find email for $employeeName"),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+    
     await _decide(
       holidayId: holidayId,
       decision: "approve",
       reason: "",
+      employeeEmail: employeeEmail,
+      employeeName: employeeName,
+      startDate: startDate,
+      endDate: endDate,
     );
   }
 
-  Future<void> _promptDecline(int holidayId) async {
+  Future<void> _promptDecline(int holidayId, String employeeName, String startDate, String endDate) async {
+    // Separa nome e cognome
+    final nameParts = employeeName.split(' ');
+    final firstName = nameParts.isNotEmpty ? nameParts[0] : '';
+    final lastName = nameParts.length > 1 ? nameParts.sublist(1).join(' ') : '';
+    
+    // Cerca l'email
+    final employeeEmail = await _findEmployeeEmail(firstName, lastName);
+    
+    if (employeeEmail == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Could not find email for $employeeName"),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+    
     final controller = TextEditingController();
 
     final reason = await showDialog<String?>(
@@ -181,6 +326,10 @@ class _HolidayRequestsScreenState extends State<HolidayRequestsScreen> {
       holidayId: holidayId,
       decision: "decline",
       reason: reason,
+      employeeEmail: employeeEmail,
+      employeeName: employeeName,
+      startDate: startDate,
+      endDate: endDate,
     );
   }
 
@@ -188,6 +337,10 @@ class _HolidayRequestsScreenState extends State<HolidayRequestsScreen> {
     required int holidayId,
     required String decision, // "approve" | "decline"
     required String reason,
+    required String employeeEmail,
+    required String employeeName,
+    required String startDate,
+    required String endDate,
   }) async {
     if (acting) return;
 
@@ -211,6 +364,17 @@ class _HolidayRequestsScreenState extends State<HolidayRequestsScreen> {
       );
 
       if (!mounted) return;
+      
+      // 🔔 DOPO IL SUCCESSO, INVIA NOTIFICA ALL'EMPLOYEE
+      await _sendDecisionNotification(
+        employeeEmail: employeeEmail,
+        decision: decision == "approve" ? "approved" : "declined",
+        employeeName: employeeName,
+        startDate: startDate,
+        endDate: endDate,
+        managerMessage: reason.isNotEmpty ? reason : null,
+      );
+
       setState(() {
         pending.removeWhere((h) => h["id"] == holidayId);
       });
@@ -281,8 +445,10 @@ class _HolidayRequestsScreenState extends State<HolidayRequestsScreen> {
                     final name = "${_safe(h["name"])} ${_safe(h["lastName"])}".trim();
                     final range = _formatRange(h["startDate"], h["endDate"]);
                     final days = _safe(h["days"]);
-                    final type = _safe(h["type"]); // optional if you store it
-                    final notes = _safe(h["notes"]); // employee notes
+                    final type = _safe(h["type"]);
+                    final notes = _safe(h["notes"]);
+                    final startDate = _safe(h["startDate"]);
+                    final endDate = _safe(h["endDate"]);
 
                     return Container(
                       margin: const EdgeInsets.only(bottom: 12),
@@ -322,28 +488,36 @@ class _HolidayRequestsScreenState extends State<HolidayRequestsScreen> {
                             children: [
                               Expanded(
                                 child: ElevatedButton.icon(
-                                  onPressed: (id is int && !acting) ? () => _approve(id) : null,
-                                  icon: const Icon(Icons.check),
-                                  label: const Text("Approve"),
+                                  onPressed: (id is int && !acting) 
+                                      ? () => _approve(id, name, startDate, endDate) 
+                                      : null,
+                                  icon: const Icon(Icons.check, color: Colors.white),
+                                  label: const Text("Approve", style: TextStyle(color: Colors.white)),
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: const Color(0xFF4ADE80),
                                     foregroundColor: Colors.white,
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                     minimumSize: const Size(double.infinity, 46),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
                                   ),
                                 ),
                               ),
                               const SizedBox(width: 10),
                               Expanded(
                                 child: ElevatedButton.icon(
-                                  onPressed: (id is int && !acting) ? () => _promptDecline(id) : null,
-                                  icon: const Icon(Icons.close),
-                                  label: const Text("Decline"),
+                                  onPressed: (id is int && !acting) 
+                                      ? () => _promptDecline(id, name, startDate, endDate) 
+                                      : null,
+                                  icon: const Icon(Icons.close, color: Colors.white),
+                                  label: const Text("Decline", style: TextStyle(color: Colors.white)),
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: Colors.redAccent,
                                     foregroundColor: Colors.white,
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                     minimumSize: const Size(double.infinity, 46),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
                                   ),
                                 ),
                               ),

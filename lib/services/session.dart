@@ -6,6 +6,7 @@ class Session {
   static String? email;
   static String? db;    // selected dbName
   static String? role;
+  static String? userId; // Add userId field
 
   // ✅ store full db list
   static List<DatabaseAccess> databases = [];
@@ -16,10 +17,36 @@ class Session {
   static const _kEmail = "email";
   static const _kDb = "db";
   static const _kRole = "role";
+  static const _kUserId = "userId"; // Add this constant
   static const _kExpiresAt = "expiresAtMs";
-  static const _kDatabases = "databases"; // ✅ NEW
+  static const _kDatabases = "databases";
 
   static const int ttlMinutes = 10;
+
+  // Add getter methods
+  static Future<String?> getEmail() async {
+    if (email != null) return email;
+    await load();
+    return email;
+  }
+
+  static Future<String?> getUserId() async {
+    if (userId != null) return userId;
+    await load();
+    return userId;
+  }
+
+  static Future<String?> getDb() async {
+    if (db != null) return db;
+    await load();
+    return db;
+  }
+
+  static Future<String?> getRole() async {
+    if (role != null) return role;
+    await load();
+    return role;
+  }
 
   static Future<void> save() async {
     final prefs = await SharedPreferences.getInstance();
@@ -30,6 +57,7 @@ class Session {
     await prefs.setString(_kEmail, email ?? "");
     await prefs.setString(_kDb, db ?? "");
     await prefs.setString(_kRole, role ?? "");
+    await prefs.setString(_kUserId, userId ?? ""); // Save userId
     await prefs.setInt(_kExpiresAt, expiresAtMs ?? 0);
 
     // ✅ save databases list as JSON
@@ -51,6 +79,7 @@ class Session {
     final storedEmail = prefs.getString(_kEmail) ?? "";
     final storedDb = prefs.getString(_kDb) ?? "";
     final storedRole = prefs.getString(_kRole) ?? "";
+    final storedUserId = prefs.getString(_kUserId) ?? ""; // Load userId
     final storedExpiresAt = prefs.getInt(_kExpiresAt) ?? 0;
     final storedDatabases = prefs.getString(_kDatabases) ?? "";
 
@@ -67,6 +96,7 @@ class Session {
     email = storedEmail;
     db = storedDb;
     role = storedRole;
+    userId = storedUserId.isEmpty ? null : storedUserId; // Set userId
     expiresAtMs = storedExpiresAt;
 
     // ✅ load databases list
@@ -97,12 +127,14 @@ class Session {
     await prefs.remove(_kEmail);
     await prefs.remove(_kDb);
     await prefs.remove(_kRole);
+    await prefs.remove(_kUserId); // Remove userId
     await prefs.remove(_kExpiresAt);
     await prefs.remove(_kDatabases);
 
     email = null;
     db = null;
     role = null;
+    userId = null; // Clear userId
     databases = [];
     expiresAtMs = null;
   }

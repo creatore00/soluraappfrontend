@@ -45,6 +45,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             list.map((item) => Map<String, dynamic>.from(item))
           );
         });
+        
+        // Debug: Print unread count
+        final unreadCount = items.where((n) => !_isRead(n)).length;
+        print("📊 Loaded ${items.length} notifications, $unreadCount unread");
+        
       } catch (e) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -57,7 +62,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   bool _isRead(Map<String, dynamic> n) {
     final v = n['isRead'];
-    return v == 1 || v == true;
+    // Handle different possible values from database
+    if (v is int) return v == 1;
+    if (v is bool) return v == true;
+    if (v is String) return v.toLowerCase() == 'true' || v == '1';
+    return false;
   }
 
   // ✅ Always return UTC (consistent for grouping + timeAgo)
@@ -96,18 +105,31 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   Future<void> _markOneAsRead(int id) async {
     try {
+      print("📝 Marking notification $id as read");
       await NotificationsService.markAsRead(db: widget.selectedDb.dbName, id: id);
       if (!mounted) return;
+      
       setState(() {
         items = items.map((n) {
           if (n['id'] == id) return {...n, 'isRead': 1};
           return n;
         }).toList();
       });
+      
+      // Show feedback
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Notification marked as read"),
+          duration: Duration(seconds: 1),
+          backgroundColor: Colors.green,
+        ),
+      );
+      
     } catch (e) {
+      print("❌ Error marking notification as read: $e");
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Failed: $e")),
+        SnackBar(content: Text("Failed to mark as read: $e")),
       );
     }
   }
@@ -115,28 +137,55 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   Future<void> _markAllAsRead() async {
     if (markingAll) return;
 
-    final unreadIds = items
-        .where((n) => !_isRead(n))
-        .map((n) => n['id'])
-        .whereType<int>()
-        .toList();
+    final unreadCount = items.where((n) => !_isRead(n)).length;
+    if (unreadCount == 0) {
+      print("ℹ️ No unread notifications to mark");
+      return;
+    }
 
-    if (unreadIds.isEmpty) return;
+    print("📝 Marking all notifications as read ($unreadCount unread)");
 
     setState(() => markingAll = true);
+    
     try {
-      await NotificationsService.markAllAsRead(db: widget.selectedDb.dbName, ids: unreadIds);
+      // Call the service to mark all as read - no IDs needed anymore
+      await NotificationsService.markAllAsRead(
+        db: widget.selectedDb.dbName,
+        role: widget.role, // Pass role for backend filtering
+      );
+      
       if (!mounted) return;
+      
+      // Update UI optimistically
       setState(() {
         items = items.map((n) => {...n, 'isRead': 1}).toList();
       });
+      
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("All notifications marked as read")),
+        const SnackBar(
+          content: Text("All notifications marked as read"),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
       );
+      
+      // Return true to dashboard to refresh
+      Navigator.pop(context, true);
+      
     } catch (e) {
+      print("❌ Error marking all as read: $e");
+      
+      // Show error message
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Failed: $e")),
+        SnackBar(
+          content: Text("Failed to mark all as read: $e"),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 3),
+        ),
       );
+      
+      // Reload to ensure UI is in sync with database
+      await _load();
     } finally {
       if (mounted) setState(() => markingAll = false);
     }
@@ -224,165 +273,178 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
     final entries = _buildSectionedList();
 
-    return Scaffold(
-      backgroundColor: const Color(0xFF0A192F),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF172A45),
-        elevation: 0,
-        title: Text(
-          unread > 0 ? "Notifications ($unread)" : "Notifications",
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-        ),
-        actions: [
-          if (items.isNotEmpty)
-            TextButton.icon(
-              onPressed: markingAll ? null : _markAllAsRead,
-              icon: Icon(Icons.done_all, color: markingAll ? Colors.white38 : const Color(0xFF4CC9F0)),
-              label: Text(
-                markingAll ? "..." : "Mark all as read",
-                style: TextStyle(color: markingAll ? Colors.white38 : const Color(0xFF4CC9F0)),
+    return WillPopScope(
+      onWillPop: () async {
+        Navigator.pop(context, unread > 0);
+        return false;
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFF0A192F),
+        appBar: AppBar(
+          backgroundColor: const Color(0xFF172A45),
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: Color(0xFF4CC9F0)),
+            onPressed: () {
+              Navigator.pop(context, unread > 0);
+            },
+          ),
+          title: Text(
+            unread > 0 ? "Notifications ($unread)" : "Notifications",
+            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          ),
+          actions: [
+            if (items.isNotEmpty && unread > 0)
+              TextButton.icon(
+                onPressed: markingAll ? null : _markAllAsRead,
+                icon: Icon(Icons.done_all, color: markingAll ? Colors.white38 : const Color(0xFF4CC9F0)),
+                label: Text(
+                  markingAll ? "Marking..." : "Mark all as read",
+                  style: TextStyle(color: markingAll ? Colors.white38 : const Color(0xFF4CC9F0)),
+                ),
               ),
-            ),
-          IconButton(
-            icon: const Icon(Icons.refresh, color: Color(0xFF4CC9F0)),
-            onPressed: _load,
-          )
-        ],
-      ),
-      body: loading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFF4CC9F0)))
-          : items.isEmpty
-              ? Center(
-                  child: Text(
-                    "No notifications",
-                    style: TextStyle(color: Colors.white.withOpacity(0.7)),
-                  ),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: entries.length,
-                  itemBuilder: (context, i) {
-                    final entry = entries[i];
+            IconButton(
+              icon: const Icon(Icons.refresh, color: Color(0xFF4CC9F0)),
+              onPressed: _load,
+            )
+          ],
+        ),
+        body: loading
+            ? const Center(child: CircularProgressIndicator(color: Color(0xFF4CC9F0)))
+            : items.isEmpty
+                ? Center(
+                    child: Text(
+                      "No notifications",
+                      style: TextStyle(color: Colors.white.withOpacity(0.7)),
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: entries.length,
+                    itemBuilder: (context, i) {
+                      final entry = entries[i];
 
-                    if (entry.isHeader) {
-                      return _sectionHeader(entry.headerTitle!);
-                    }
+                      if (entry.isHeader) {
+                        return _sectionHeader(entry.headerTitle!);
+                      }
 
-                    final n = entry.item!;
-                    final isRead = _isRead(n);
-                    final dtUtc = _parseCreatedAtUtc(n['createdAt']);
+                      final n = entry.item!;
+                      final isRead = _isRead(n);
+                      final dtUtc = _parseCreatedAtUtc(n['createdAt']);
 
-                    return TweenAnimationBuilder<double>(
-                      duration: const Duration(milliseconds: 280),
-                      tween: Tween(begin: 0, end: 1),
-                      builder: (context, v, child) => Opacity(
-                        opacity: v,
-                        child: Transform.translate(offset: Offset(0, (1 - v) * 10), child: child),
-                      ),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(16),
-                        onTap: () async {
-                          final id = n['id'];
-                          final type = (n['type'] ?? '').toString().toUpperCase();
+                      return TweenAnimationBuilder<double>(
+                        duration: const Duration(milliseconds: 280),
+                        tween: Tween(begin: 0, end: 1),
+                        builder: (context, v, child) => Opacity(
+                          opacity: v,
+                          child: Transform.translate(offset: Offset(0, (1 - v) * 10), child: child),
+                        ),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(16),
+                          onTap: () async {
+                            final id = n['id'];
+                            final type = (n['type'] ?? '').toString().toUpperCase();
 
-                          if (id is int && !isRead) {
-                            await _markOneAsRead(id);
-                          }
+                            if (id is int && !isRead) {
+                              await _markOneAsRead(id);
+                            }
 
-                          if (type == "HOLIDAY" && isApprover) {
-                            if (!mounted) return;
-                            await Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => HolidayRequestsScreen(
-                                  selectedDb: widget.selectedDb,
-                                  role: widget.role,
+                            if (type == "HOLIDAY" && isApprover) {
+                              if (!mounted) return;
+                              final result = await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => HolidayRequestsScreen(
+                                    selectedDb: widget.selectedDb,
+                                    role: widget.role,
+                                  ),
                                 ),
-                              ),
-                            );
+                              );
 
-                            await _load();
-                          }
-                        },
-                        child: Container(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF172A45).withOpacity(isRead ? 0.6 : 0.95),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: isRead
-                                  ? Colors.white.withOpacity(0.06)
-                                  : const Color(0xFF4CC9F0).withOpacity(0.25),
+                              // Refresh notifications when returning from holiday requests
+                              await _load();
+                            }
+                          },
+                          child: Container(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF172A45).withOpacity(isRead ? 0.6 : 0.95),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: isRead
+                                    ? Colors.white.withOpacity(0.06)
+                                    : const Color(0xFF4CC9F0).withOpacity(0.25),
+                              ),
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Container(
+                                  width: 42,
+                                  height: 42,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: (isRead ? Colors.white : const Color(0xFF4CC9F0)).withOpacity(0.12),
+                                  ),
+                                  child: Icon(
+                                    n['type'] == 'warning'
+                                        ? Icons.warning_amber_rounded
+                                        : n['type'] == 'success'
+                                            ? Icons.check_circle_outline
+                                            : Icons.notifications_none,
+                                    color: isRead ? Colors.white70 : const Color(0xFF4CC9F0),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              (n['title'] ?? 'Notification').toString(),
+                                              style: TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 15,
+                                                fontWeight: isRead ? FontWeight.w600 : FontWeight.w800,
+                                              ),
+                                            ),
+                                          ),
+                                          if (!isRead)
+                                            Container(
+                                              width: 8,
+                                              height: 8,
+                                              decoration: const BoxDecoration(
+                                                shape: BoxShape.circle,
+                                                color: Color(0xFF4ADE80),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        (n['message'] ?? '').toString(),
+                                        style: TextStyle(color: Colors.white.withOpacity(0.75)),
+                                      ),
+                                      const SizedBox(height: 10),
+                                      Text(
+                                        _timeAgoUtc(dtUtc),
+                                        style: TextStyle(color: Colors.white.withOpacity(0.45), fontSize: 12),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Container(
-                                width: 42,
-                                height: 42,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: (isRead ? Colors.white : const Color(0xFF4CC9F0)).withOpacity(0.12),
-                                ),
-                                child: Icon(
-                                  n['type'] == 'warning'
-                                      ? Icons.warning_amber_rounded
-                                      : n['type'] == 'success'
-                                          ? Icons.check_circle_outline
-                                          : Icons.notifications_none,
-                                  color: isRead ? Colors.white70 : const Color(0xFF4CC9F0),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: Text(
-                                            (n['title'] ?? 'Notification').toString(),
-                                            style: TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 15,
-                                              fontWeight: isRead ? FontWeight.w600 : FontWeight.w800,
-                                            ),
-                                          ),
-                                        ),
-                                        if (!isRead)
-                                          Container(
-                                            width: 8,
-                                            height: 8,
-                                            decoration: const BoxDecoration(
-                                              shape: BoxShape.circle,
-                                              color: Color(0xFF4ADE80),
-                                            ),
-                                          ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 6),
-                                    Text(
-                                      (n['message'] ?? '').toString(),
-                                      style: TextStyle(color: Colors.white.withOpacity(0.75)),
-                                    ),
-                                    const SizedBox(height: 10),
-                                    Text(
-                                      _timeAgoUtc(dtUtc),
-                                      style: TextStyle(color: Colors.white.withOpacity(0.45), fontSize: 12),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
                         ),
-                      ),
-                    );
-                  },
-                ),
+                      );
+                    },
+                  ),
+      ),
     );
   }
 }
