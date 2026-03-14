@@ -1,4 +1,5 @@
 // lib/services/device_registration_service.dart
+import 'dart:io' show Platform; // Add this import
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -10,21 +11,21 @@ class DeviceRegistrationService {
 
   // Chiamare questa funzione DOPO il login
   static Future<void> registerCurrentDevice() async {
-     try {
-    final email = await Session.getEmail();
-    final userId = await Session.getUserId();
-    final dbName = await Session.getDb();
-    
-    print('🔍 REGISTER DEVICE - Valori sessione:');
-    print('   email: $email');
-    print('   userId: $userId');
-    print('   dbName: $dbName');
-    
-    if (email == null || userId == null || dbName == null) {
-      print('❌ REGISTER DEVICE FALLITO - Dati mancanti');
-      print('   email: $email, userId: $userId, dbName: $dbName');
-      return;
-    }
+    try {
+      final email = await Session.getEmail();
+      final userId = await Session.getUserId();
+      final dbName = await Session.getDb();
+      
+      print('🔍 REGISTER DEVICE - Valori sessione:');
+      print('   email: $email');
+      print('   userId: $userId');
+      print('   dbName: $dbName');
+      
+      if (email == null || userId == null || dbName == null) {
+        print('❌ REGISTER DEVICE FALLITO - Dati mancanti');
+        print('   email: $email, userId: $userId, dbName: $dbName');
+        return;
+      }
 
       // Ottieni il token FCM
       String? token = await _fcm.getToken();
@@ -33,7 +34,25 @@ class DeviceRegistrationService {
         return;
       }
 
+      // 🔥 FIX: Detect the actual platform
+      String deviceType;
+      if (Platform.isIOS) {
+        deviceType = 'ios';
+        
+        // iOS specific: Ensure APNS token is available
+        String? apnsToken = await _fcm.getAPNSToken();
+        print('📱 APNS Token: $apnsToken');
+        if (apnsToken == null) {
+          print('⚠️ APNS token not available yet - notifications may not work');
+        }
+      } else if (Platform.isAndroid) {
+        deviceType = 'android';
+      } else {
+        deviceType = 'web';
+      }
+
       print('📱 Registering device for: $email in $dbName');
+      print('📱 Platform detected: $deviceType');
       
       // Chiama il backend
       final response = await http.post(
@@ -43,7 +62,7 @@ class DeviceRegistrationService {
           'userId': userId,
           'email': email,
           'fcmToken': token,
-          'deviceType': 'android', // o 'ios' a seconda della piattaforma
+          'deviceType': deviceType, // 🔥 Now sends correct platform
           'dbName': dbName,
         }),
       ).timeout(const Duration(seconds: 5));
@@ -51,7 +70,7 @@ class DeviceRegistrationService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true) {
-          print('✅ Device registered successfully');
+          print('✅ Device registered successfully as $deviceType');
         } else {
           print('⚠️ Device registration failed: ${data['message']}');
         }
