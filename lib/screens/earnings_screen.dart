@@ -28,7 +28,8 @@ class EarningsScreen extends StatefulWidget {
 
 class _EarningsScreenState extends State<EarningsScreen> {
   List<Map<String, dynamic>> _payslips = [];
-  bool _isLoading = true;
+  bool _isLoading = false;
+  bool _isLoadingMonths = true;
   String? _selectedMonth;
   List<String> _availableMonths = [];
   
@@ -42,6 +43,8 @@ class _EarningsScreenState extends State<EarningsScreen> {
   }
 
   Future<void> _fetchAvailableMonths() async {
+    setState(() => _isLoadingMonths = true);
+    
     try {
       final response = await http.get(
         Uri.parse(
@@ -57,21 +60,29 @@ class _EarningsScreenState extends State<EarningsScreen> {
             if (_availableMonths.isNotEmpty) {
               _selectedMonth = _availableMonths.first;
             }
+            _isLoadingMonths = false;
           });
-          await _fetchPayslips();
+          if (_availableMonths.isNotEmpty) {
+            await _fetchPayslips();
+          } else {
+            setState(() => _isLoading = false);
+          }
         } else {
           setState(() {
+            _isLoadingMonths = false;
             _isLoading = false;
           });
         }
       } else {
         setState(() {
+          _isLoadingMonths = false;
           _isLoading = false;
         });
       }
     } catch (e) {
       print('Error fetching months: $e');
       setState(() {
+        _isLoadingMonths = false;
         _isLoading = false;
       });
     }
@@ -91,7 +102,7 @@ class _EarningsScreenState extends State<EarningsScreen> {
           "&email=${widget.email}"
           "&month=${Uri.encodeComponent(_selectedMonth!)}"
           "&page=1"
-          "&limit=5";
+          "&limit=50"; // Increase limit to show all payslips for the month
       
       final response = await http.get(Uri.parse(url));
       
@@ -248,6 +259,21 @@ class _EarningsScreenState extends State<EarningsScreen> {
           icon: const Icon(Icons.arrow_back, color: Color(0xFF4CC9F0)),
           onPressed: () => Navigator.pop(context),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh, color: Color(0xFF4CC9F0)),
+            onPressed: () {
+              if (_selectedMonth != null) {
+                _fetchPayslips();
+              } else if (_availableMonths.isNotEmpty) {
+                setState(() => _selectedMonth = _availableMonths.first);
+                _fetchPayslips();
+              } else {
+                _fetchAvailableMonths();
+              }
+            },
+          ),
+        ],
       ),
       body: Container(
         decoration: const BoxDecoration(
@@ -327,14 +353,83 @@ class _EarningsScreenState extends State<EarningsScreen> {
   }
 
   Widget _buildPayslipsList() {
+    // Show loading only when actively fetching payslips (not when loading months)
     if (_isLoading) {
       return const Center(
-        child: CircularProgressIndicator(
-          color: Color(0xFF4CC9F0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(
+              color: Color(0xFF4CC9F0),
+            ),
+            SizedBox(height: 16),
+            Text(
+              'Loading earnings...',
+              style: TextStyle(
+                color: Colors.white70,
+                fontSize: 14,
+              ),
+            ),
+          ],
         ),
       );
     }
     
+    // If still loading months, show a different message
+    if (_isLoadingMonths) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(
+              color: Color(0xFF4CC9F0),
+            ),
+            SizedBox(height: 16),
+            Text(
+              'Loading your payslips...',
+              style: TextStyle(
+                color: Colors.white70,
+                fontSize: 14,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    
+    // If no months available at all
+    if (_availableMonths.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.attach_money_outlined,
+              size: 80,
+              color: Colors.white.withOpacity(0.3),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'No payslips available yet',
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.6),
+                fontSize: 16,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Payslips will appear here once uploaded',
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.4),
+                fontSize: 14,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    
+    // If no payslips for selected month
     if (_payslips.isEmpty) {
       return Center(
         child: Column(
@@ -347,20 +442,27 @@ class _EarningsScreenState extends State<EarningsScreen> {
             ),
             const SizedBox(height: 16),
             Text(
-              _selectedMonth != null 
-                  ? 'No earnings found for ${_getMonthDisplay(_selectedMonth!)}' 
-                  : 'Select a month to view earnings',
+              'No earnings found for ${_getMonthDisplay(_selectedMonth!)}',
               style: TextStyle(
                 color: Colors.white.withOpacity(0.6),
                 fontSize: 16,
               ),
               textAlign: TextAlign.center,
             ),
+            const SizedBox(height: 8),
+            Text(
+              'Try selecting a different month',
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.4),
+                fontSize: 14,
+              ),
+            ),
           ],
         ),
       );
     }
     
+    // Show payslips list
     return ListView.builder(
       padding: const EdgeInsets.all(16),
       itemCount: _payslips.length,
