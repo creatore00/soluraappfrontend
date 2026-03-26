@@ -1755,14 +1755,6 @@ class _DashboardScreenState extends State<DashboardScreen>
                             );
                           },
                         ),
-                      _DrawerTile(
-                        icon: Icons.settings,
-                        title: 'Settings',
-                        onTap: () {
-                          Navigator.pop(context);
-                          _openSettingsPlaceholder();
-                        },
-                      ),
                       const Divider(color: Color(0xFF1E3A5F)),
                       _DrawerTile(
                         icon: Icons.logout,
