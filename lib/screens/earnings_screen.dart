@@ -102,7 +102,7 @@ class _EarningsScreenState extends State<EarningsScreen> {
           "&email=${widget.email}"
           "&month=${Uri.encodeComponent(_selectedMonth!)}"
           "&page=1"
-          "&limit=50"; // Increase limit to show all payslips for the month
+          "&limit=50";
       
       final response = await http.get(Uri.parse(url));
       
@@ -605,7 +605,7 @@ class _EarningsScreenState extends State<EarningsScreen> {
             icon: Icons.access_time,
             label: 'Hours',
             onTap: () {
-              Navigator.pushReplacement(
+              Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (_) => HoursSummaryScreen(
@@ -622,7 +622,7 @@ class _EarningsScreenState extends State<EarningsScreen> {
             icon: Icons.calendar_today,
             label: 'Rota',
             onTap: () {
-              Navigator.pushReplacement(
+              Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (_) => AllRotaScreen(
@@ -638,7 +638,7 @@ class _EarningsScreenState extends State<EarningsScreen> {
             icon: Icons.beach_access,
             label: 'Holidays',
             onTap: () {
-              Navigator.pushReplacement(
+              Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (_) => HolidaysScreen(
@@ -757,16 +757,8 @@ class _EarningsScreenState extends State<EarningsScreen> {
               icon: const Icon(Icons.home, size: 28),
               color: Colors.white,
               onPressed: () {
-                Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(
-                    builder: (_) => DashboardScreen(
-                      email: widget.email,
-                      databases: [widget.selectedDb],
-                      selectedDb: widget.selectedDb,
-                    ),
-                  ),
-                  (route) => false,
-                );
+                // Navigate back to the first Dashboard in the stack
+                Navigator.popUntil(context, (route) => route.isFirst);
               },
             ),
           ),
