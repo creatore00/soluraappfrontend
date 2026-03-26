@@ -56,6 +56,14 @@ class _ShiftRequestsScreenState extends State<ShiftRequestsScreen>
       vsync: this,
       initialIndex: widget.initialTab.clamp(0, tabCount - 1),
     );
+    
+    // Add this listener to force rebuild when tab changes
+    _tabController.addListener(() {
+      if (mounted) {
+        setState(() {}); // Force rebuild to show/hide FAB based on tab index
+      }
+    });
+    
     _loadRequests();
     if (_canManageShifts && widget.initialTab == 1) {
       _fetchMissingShifts();
