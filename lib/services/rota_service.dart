@@ -194,6 +194,21 @@ class RotaService {
     }
   }
 
+  Future<List<Map<String, dynamic>>> fetchMissingPublished({
+    required String db,
+    required String day, // YYYY-MM-DD
+  }) async {
+    final url = Uri.parse('${AuthService.baseUrl}/api/missing-published?db=$db&day=$day');
+    final response = await http.get(url);
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      if (data['success']) {
+        return List<Map<String, dynamic>>.from(data['missing']);
+      }
+    }
+    throw Exception('Failed to fetch missing published');
+  }
+
   // -------------------------------------------
   // GET: fetch my rota for a specific day
   // -------------------------------------------

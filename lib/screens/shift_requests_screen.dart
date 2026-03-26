@@ -1,5 +1,6 @@
 // lib/screens/shift_requests_screen.dart
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../models/database_access.dart';
 import '../services/rota_service.dart';
 import '../services/notifications_service.dart';
@@ -9,6 +10,7 @@ class ShiftRequestsScreen extends StatefulWidget {
   final String userEmail;
   final String userName;
   final String userDesignation;
+  final int initialTab; // 0 = requests, 1 = missing shifts (only for AM/Manager)
 
   const ShiftRequestsScreen({
     super.key,
@@ -16,25 +18,64 @@ class ShiftRequestsScreen extends StatefulWidget {
     required this.userEmail,
     required this.userName,
     required this.userDesignation,
+    this.initialTab = 0,
   });
 
   @override
   State<ShiftRequestsScreen> createState() => _ShiftRequestsScreenState();
 }
 
-class _ShiftRequestsScreenState extends State<ShiftRequestsScreen> {
+class _ShiftRequestsScreenState extends State<ShiftRequestsScreen>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
   final RotaService _rotaService = RotaService();
 
+  // Request tab data
   bool _loading = true;
   List<Map<String, dynamic>> _requests = [];
   List<Map<String, dynamic>> _allRequests = [];
   final Map<String, List<Map<String, dynamic>>> _myRotaCache = {};
 
+  // Missing shifts tab data (only for AM/Manager)
+  List<Map<String, dynamic>> _missingShifts = [];
+  DateTime _selectedDate = DateTime.now();
+  bool _loadingMissing = false;
+  Set<String> _sendingReminder = {};
+
   bool get _canManageShifts {
-    final r = widget.selectedDb.access.trim().toLowerCase();
-    return r == "am" || r == "manager" || r == "admin";
+    final role = widget.selectedDb.access.trim().toLowerCase();
+    return role == "am" || role == "manager" || role == "admin";
   }
 
+  @override
+  void initState() {
+    super.initState();
+    final tabCount = _canManageShifts ? 2 : 1;
+    _tabController = TabController(
+      length: tabCount,
+      vsync: this,
+      initialIndex: widget.initialTab.clamp(0, tabCount - 1),
+    );
+    _loadRequests();
+    if (_canManageShifts && widget.initialTab == 1) {
+      _fetchMissingShifts();
+    }
+    _tabController.addListener(() {
+      if (_tabController.indexIsChanging && _tabController.index == 1) {
+        _fetchMissingShifts();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  // ----------------------------------------------------------------------
+  // Shift Requests tab logic
+  // ----------------------------------------------------------------------
   String _norm(String v) => v.trim().toLowerCase();
 
   bool _shouldShowToUserByDesignation(String neededForRaw) {
@@ -79,12 +120,6 @@ class _ShiftRequestsScreenState extends State<ShiftRequestsScreen> {
     return "$yyyy-$mm-$dd";
   }
 
-  @override
-  void initState() {
-    super.initState();
-    _loadRequests();
-  }
-
   Future<void> _loadRequests() async {
     setState(() => _loading = true);
 
@@ -109,7 +144,8 @@ class _ShiftRequestsScreenState extends State<ShiftRequestsScreen> {
     }
   }
 
-  Future<List<Map<String, dynamic>>> _applyFilters(List<Map<String, dynamic>> items) async {
+  Future<List<Map<String, dynamic>>> _applyFilters(
+      List<Map<String, dynamic>> items) async {
     final out = <Map<String, dynamic>>[];
 
     for (final r in items) {
@@ -119,7 +155,7 @@ class _ShiftRequestsScreenState extends State<ShiftRequestsScreen> {
       final status = (r["status"] ?? "pending").toString().toLowerCase();
       final dayLabel = (r["day_label"] ?? "").toString();
       final dateKey = _dayLabelToDateKey(dayLabel);
-      
+
       if (dateKey == null) {
         out.add(r);
         continue;
@@ -178,8 +214,7 @@ class _ShiftRequestsScreenState extends State<ShiftRequestsScreen> {
         _showSnackBar("✅ Shift accepted", Colors.green);
         _myRotaCache.clear();
         await _loadRequests();
-        
-        // 🔔 Invia notifica push ai manager
+
         await _sendPushNotification(
           targetRole: 'AM',
           title: '✅ Shift Accepted',
@@ -193,7 +228,88 @@ class _ShiftRequestsScreenState extends State<ShiftRequestsScreen> {
     }
   }
 
-  Future<void> _sendPushNotification({
+  // ----------------------------------------------------------------------
+  // Missing shifts tab logic (only for AM/Manager)
+  // ----------------------------------------------------------------------
+  Future<void> _fetchMissingShifts() async {
+    if (!_canManageShifts) return;
+    setState(() => _loadingMissing = true);
+    try {
+      final day = DateFormat('yyyy-MM-dd').format(_selectedDate);
+      final missing = await _rotaService.fetchMissingPublished(
+        db: widget.selectedDb.dbName,
+        day: day,
+      );
+      if (mounted) {
+        setState(() {
+          _missingShifts = missing;
+          _loadingMissing = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _loadingMissing = false);
+        _showSnackBar("Error loading missing shifts: $e", Colors.red);
+      }
+    }
+  }
+
+  Future<void> _pickMissingDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 30)),
+    );
+    if (picked != null && picked != _selectedDate) {
+      setState(() => _selectedDate = picked);
+      _fetchMissingShifts();
+    }
+  }
+
+  Future<void> _sendReminderToEmployees() async {
+    if (_missingShifts.isEmpty) {
+      _showSnackBar("No missing shifts to remind", Colors.orange);
+      return;
+    }
+
+    final emails = _missingShifts
+        .where((m) => m['email'] != null && m['email'].toString().isNotEmpty)
+        .map((m) => m['email'].toString())
+        .toSet();
+
+    if (emails.isEmpty) {
+      _showSnackBar("No valid employee emails found", Colors.red);
+      return;
+    }
+
+    setState(() => _sendingReminder.add('all'));
+
+    int successCount = 0;
+    for (final email in emails) {
+      final sent = await _sendPushNotification(
+        targetEmail: email,
+        targetRole: 'EMPLOYEE',
+        title: '⚠️ Shift Confirmation Reminder',
+        message:
+            'Please confirm your shifts for ${DateFormat('dd/MM/yyyy').format(_selectedDate)}',
+      );
+      if (sent) successCount++;
+    }
+
+    setState(() => _sendingReminder.remove('all'));
+
+    if (successCount > 0) {
+      _showSnackBar("✅ Reminder sent to $successCount employee(s)", Colors.green);
+    } else {
+      _showSnackBar("❌ Failed to send reminders", Colors.red);
+    }
+  }
+
+  // ----------------------------------------------------------------------
+  // Notification helper
+  // ----------------------------------------------------------------------
+  Future<bool> _sendPushNotification({
     required String targetRole,
     required String title,
     required String message,
@@ -202,7 +318,7 @@ class _ShiftRequestsScreenState extends State<ShiftRequestsScreen> {
     try {
       print('📱 Sending push notification: $title');
       print('   targetRole: $targetRole, targetEmail: $targetEmail');
-      
+
       final success = await NotificationsService.sendPushNotification(
         db: widget.selectedDb.dbName,
         targetEmail: targetEmail ?? '',
@@ -211,47 +327,16 @@ class _ShiftRequestsScreenState extends State<ShiftRequestsScreen> {
         message: message,
         type: 'SYSTEM',
       );
-      
+
       if (success) {
         print('✅ Push notification sent successfully');
       } else {
         print('⚠️ Push notification failed');
       }
+      return success;
     } catch (e) {
       print('❌ Error sending push notification: $e');
-    }
-  }
-
-  Future<void> _openCreateShiftRequestDialog() async {
-    final created = await showDialog<bool>(
-      context: context,
-      builder: (_) => _CreateShiftRequestDialog(
-        dbName: widget.selectedDb.dbName,
-        userEmail: widget.userEmail,
-        rotaService: _rotaService,
-        onSendPushNotification: _sendPushNotification,
-      ),
-    );
-
-    if (created == true) {
-      _showSnackBar("✅ Shift request(s) created", Colors.green);
-      await _loadRequests();
-    }
-  }
-
-  Future<void> _openAddToRotaDialog() async {
-    final created = await showDialog<bool>(
-      context: context,
-      builder: (_) => _AddToRotaDialog(
-        dbName: widget.selectedDb.dbName,
-        userEmail: widget.userEmail,
-        rotaService: _rotaService,
-        onSendPushNotification: _sendPushNotification,
-      ),
-    );
-
-    if (created == true) {
-      _showSnackBar("✅ Shift(s) added to rota", Colors.green);
+      return false;
     }
   }
 
@@ -275,6 +360,43 @@ class _ShiftRequestsScreenState extends State<ShiftRequestsScreen> {
     return Colors.orange;
   }
 
+  // ----------------------------------------------------------------------
+  // Dialogs
+  // ----------------------------------------------------------------------
+  Future<void> _openCreateShiftRequestDialog() async {
+    final created = await showDialog<bool>(
+      context: context,
+      builder: (_) => _CreateShiftRequestDialog(
+        dbName: widget.selectedDb.dbName,
+        userEmail: widget.userEmail,
+        rotaService: _rotaService,
+        onSendPushNotification: _sendPushNotification,
+      ),
+    );
+    if (created == true) {
+      _showSnackBar("✅ Shift request(s) created", Colors.green);
+      await _loadRequests();
+    }
+  }
+
+  Future<void> _openAddToRotaDialog() async {
+    final created = await showDialog<bool>(
+      context: context,
+      builder: (_) => _AddToRotaDialog(
+        dbName: widget.selectedDb.dbName,
+        userEmail: widget.userEmail,
+        rotaService: _rotaService,
+        onSendPushNotification: _sendPushNotification,
+      ),
+    );
+    if (created == true) {
+      _showSnackBar("✅ Shift(s) added to rota", Colors.green);
+    }
+  }
+
+  // ----------------------------------------------------------------------
+  // Build UI
+  // ----------------------------------------------------------------------
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -282,14 +404,30 @@ class _ShiftRequestsScreenState extends State<ShiftRequestsScreen> {
       appBar: AppBar(
         title: const Text("Shift Requests", style: TextStyle(color: Colors.white)),
         backgroundColor: const Color(0xFF172A45),
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: [
+            const Tab(text: "Requests"),
+            if (_canManageShifts) const Tab(text: "Missing Shifts"),
+          ],
+          indicatorColor: const Color(0xFF4CC9F0),
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white54,
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh, color: Color(0xFF4CC9F0)),
-            onPressed: _loadRequests,
+            onPressed: () {
+              if (_tabController.index == 0) {
+                _loadRequests();
+              } else {
+                _fetchMissingShifts();
+              }
+            },
           ),
         ],
       ),
-      floatingActionButton: _canManageShifts
+      floatingActionButton: _canManageShifts && _tabController.index == 0
           ? Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -313,138 +451,298 @@ class _ShiftRequestsScreenState extends State<ShiftRequestsScreen> {
               ],
             )
           : null,
-      body: _loading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFF4CC9F0)))
-          : _requests.isEmpty
-              ? Center(
-                  child: Text(
-                    "No shift requests available.",
-                    style: TextStyle(color: Colors.white.withOpacity(0.6)),
-                  ),
-                )
-              : RefreshIndicator(
-                  onRefresh: _loadRequests,
-                  backgroundColor: const Color(0xFF172A45),
-                  color: const Color(0xFF4CC9F0),
-                  child: ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: _requests.length,
-                    itemBuilder: (_, i) {
-                      final r = _requests[i];
-                      final id = (r["id"] ?? "").toString();
-                      final day = (r["day_label"] ?? "").toString();
-                      final st = (r["start_time"] ?? "").toString();
-                      final et = (r["end_time"] ?? "").toString();
-                      final neededFor = (r["needed_for"] ?? "anyone").toString();
-                      final status = (r["status"] ?? "pending").toString();
-                      final acceptedFn = (r["accepted_first_name"] ?? "").toString();
-                      final acceptedLn = (r["accepted_last_name"] ?? "").toString();
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          // Requests tab
+          _buildRequestsTab(),
+          // Missing shifts tab (only if can manage)
+          if (_canManageShifts) _buildMissingShiftsTab(),
+        ],
+      ),
+    );
+  }
 
-                      final isPending = status.toLowerCase() == "pending";
+  Widget _buildRequestsTab() {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator(color: Color(0xFF4CC9F0)));
+    }
+    if (_requests.isEmpty) {
+      return Center(
+        child: Text(
+          "No shift requests available.",
+          style: TextStyle(color: Colors.white.withOpacity(0.6)),
+        ),
+      );
+    }
+    return RefreshIndicator(
+      onRefresh: _loadRequests,
+      backgroundColor: const Color(0xFF172A45),
+      color: const Color(0xFF4CC9F0),
+      child: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: _requests.length,
+        itemBuilder: (_, i) {
+          final r = _requests[i];
+          final id = (r["id"] ?? "").toString();
+          final day = (r["day_label"] ?? "").toString();
+          final st = (r["start_time"] ?? "").toString();
+          final et = (r["end_time"] ?? "").toString();
+          final neededFor = (r["needed_for"] ?? "anyone").toString();
+          final status = (r["status"] ?? "pending").toString();
+          final acceptedFn = (r["accepted_first_name"] ?? "").toString();
+          final acceptedLn = (r["accepted_last_name"] ?? "").toString();
 
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 14),
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF172A45),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: Colors.white.withOpacity(0.06)),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              day,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              "$st → $et • Needed: ${neededFor.toUpperCase()}",
-                              style: TextStyle(color: Colors.white.withOpacity(0.75)),
-                            ),
-                            const SizedBox(height: 10),
-                            Row(
-                              children: [
-                                Flexible(
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: _statusColor(status).withOpacity(0.15),
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(
-                                        color: _statusColor(status).withOpacity(0.35),
-                                      ),
-                                    ),
-                                    child: Text(
-                                      status.toUpperCase(),
-                                      style: TextStyle(
-                                        color: _statusColor(status),
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 12,
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
-                                      maxLines: 1,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                // Use LayoutBuilder to handle available space
-                                Expanded(
-                                  child: LayoutBuilder(
-                                    builder: (context, constraints) {
-                                      if (isPending) {
-                                        return SizedBox(
-                                          width: constraints.maxWidth,
-                                          height: 40,
-                                          child: ElevatedButton(
-                                            onPressed: () => _acceptShift(id),
-                                            style: ElevatedButton.styleFrom(
-                                              backgroundColor: const Color(0xFF4ADE80),
-                                              foregroundColor: Colors.white,
-                                              shape: RoundedRectangleBorder(
-                                                borderRadius: BorderRadius.circular(12),
-                                              ),
-                                              padding: EdgeInsets.zero,
-                                            ),
-                                            child: const Text("Accept"),
-                                          ),
-                                        );
-                                      } else {
-                                        return Text(
-                                          "Accepted by: $acceptedFn $acceptedLn",
-                                          style: TextStyle(color: Colors.white.withOpacity(0.7)),
-                                          textAlign: TextAlign.right,
-                                          overflow: TextOverflow.ellipsis,
-                                          maxLines: 1,
-                                        );
-                                      }
-                                    },
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      );
-                    },
+          final isPending = status.toLowerCase() == "pending";
+
+          return Container(
+            margin: const EdgeInsets.only(bottom: 14),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFF172A45),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white.withOpacity(0.06)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  day,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
+                const SizedBox(height: 6),
+                Text(
+                  "$st → $et • Needed: ${neededFor.toUpperCase()}",
+                  style: TextStyle(color: Colors.white.withOpacity(0.75)),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Flexible(
+                      child: Container(
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: _statusColor(status).withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: _statusColor(status).withOpacity(0.35),
+                          ),
+                        ),
+                        child: Text(
+                          status.toUpperCase(),
+                          style: TextStyle(
+                            color: _statusColor(status),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          if (isPending) {
+                            return SizedBox(
+                              width: constraints.maxWidth,
+                              height: 40,
+                              child: ElevatedButton(
+                                onPressed: () => _acceptShift(id),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF4ADE80),
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  padding: EdgeInsets.zero,
+                                ),
+                                child: const Text("Accept"),
+                              ),
+                            );
+                          } else {
+                            return Text(
+                              "Accepted by: $acceptedFn $acceptedLn",
+                              style: TextStyle(color: Colors.white.withOpacity(0.7)),
+                              textAlign: TextAlign.right,
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
+                            );
+                          }
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildMissingShiftsTab() {
+    return Column(
+      children: [
+        // Date picker and reminder button
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onTap: _pickMissingDate,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF172A45),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFF4CC9F0).withOpacity(0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.calendar_today,
+                            color: Color(0xFF4CC9F0), size: 20),
+                        const SizedBox(width: 12),
+                        Text(
+                          DateFormat('dd/MM/yyyy').format(_selectedDate),
+                          style: const TextStyle(color: Colors.white, fontSize: 16),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              if (_missingShifts.isNotEmpty)
+                ElevatedButton.icon(
+                  onPressed: _sendingReminder.contains('all')
+                      ? null
+                      : _sendReminderToEmployees,
+                  icon: _sendingReminder.contains('all')
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.notifications_active),
+                  label: const Text("Remind All"),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF4CC9F0),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const Divider(color: Colors.white24, height: 1),
+        Expanded(
+          child: _loadingMissing
+              ? const Center(child: CircularProgressIndicator(color: Color(0xFF4CC9F0)))
+              : _missingShifts.isEmpty
+                  ? Center(
+                      child: Text(
+                        'No missing shifts for ${DateFormat('dd/MM/yyyy').format(_selectedDate)}',
+                        style: TextStyle(color: Colors.white.withOpacity(0.6)),
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: _missingShifts.length,
+                      itemBuilder: (_, i) {
+                        final shift = _missingShifts[i];
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF172A45),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: Colors.white.withOpacity(0.1),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const Icon(Icons.person,
+                                      color: Color(0xFF4CC9F0), size: 20),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      '${shift['name']} ${shift['lastName']}',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  const Icon(Icons.schedule,
+                                      color: Colors.white54, size: 16),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    '${shift['startTime']} - ${shift['endTime']}',
+                                    style: TextStyle(color: Colors.white70),
+                                  ),
+                                ],
+                              ),
+                              if (shift['day'] != null) ...[
+                                const SizedBox(height: 4),
+                                Row(
+                                  children: [
+                                    const Icon(Icons.calendar_today,
+                                        color: Colors.white54, size: 16),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      shift['day'],
+                                      style: TextStyle(color: Colors.white54, fontSize: 12),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+        ),
+      ],
     );
   }
 }
 
 // =====================================================
-// DIALOG 1: CREATE SHIFT REQUEST (SOLO GIORNI FUTURI)
+// DIALOG 1: CREATE SHIFT REQUEST (FUTURE DAYS)
 // =====================================================
 class _CreateShiftRequestDialog extends StatefulWidget {
   final String dbName;
   final String userEmail;
   final RotaService rotaService;
-  final Function({required String targetRole, required String title, required String message, String? targetEmail}) onSendPushNotification;
+  final Function(
+      {required String targetRole,
+      required String title,
+      required String message,
+      String? targetEmail}) onSendPushNotification;
 
   const _CreateShiftRequestDialog({
     required this.dbName,
@@ -454,12 +752,13 @@ class _CreateShiftRequestDialog extends StatefulWidget {
   });
 
   @override
-  State<_CreateShiftRequestDialog> createState() => _CreateShiftRequestDialogState();
+  State<_CreateShiftRequestDialog> createState() =>
+      _CreateShiftRequestDialogState();
 }
 
 class _CreateShiftRequestDialogState extends State<_CreateShiftRequestDialog> {
   DateTime? _day;
-  
+
   final _startCtrl1 = TextEditingController();
   final _endCtrl1 = TextEditingController();
   String _neededFor1 = "anyone";
@@ -483,7 +782,6 @@ class _CreateShiftRequestDialogState extends State<_CreateShiftRequestDialog> {
   Future<void> _pickDay() async {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    
     final picked = await showDatePicker(
       context: context,
       initialDate: today,
@@ -524,12 +822,10 @@ class _CreateShiftRequestDialogState extends State<_CreateShiftRequestDialog> {
       _showError("Please select a day");
       return;
     }
-
     if (!_validateShift(_startCtrl1.text, _endCtrl1.text)) {
       _showError("Please fill all fields for shift 1");
       return;
     }
-
     if (_addSecondShift && !_validateShift(_startCtrl2.text, _endCtrl2.text)) {
       _showError("Please fill all fields for shift 2");
       return;
@@ -539,7 +835,7 @@ class _CreateShiftRequestDialogState extends State<_CreateShiftRequestDialog> {
 
     try {
       int successCount = 0;
-      
+
       final yyyy = _day!.year.toString().padLeft(4, '0');
       final mm = _day!.month.toString().padLeft(2, '0');
       final dd = _day!.day.toString().padLeft(2, '0');
@@ -573,7 +869,6 @@ class _CreateShiftRequestDialogState extends State<_CreateShiftRequestDialog> {
           endTime: _endCtrl2.text.trim(),
           neededFor: _neededFor2,
         );
-
         if (ok2) {
           successCount++;
           await widget.onSendPushNotification(
@@ -632,10 +927,9 @@ class _CreateShiftRequestDialogState extends State<_CreateShiftRequestDialog> {
               ],
             ),
             const SizedBox(height: 20),
-            
-            Text("Shift 1", style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold)),
+            Text("Shift 1",
+                style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
-            
             TextField(
               controller: _startCtrl1,
               readOnly: true,
@@ -664,7 +958,6 @@ class _CreateShiftRequestDialogState extends State<_CreateShiftRequestDialog> {
               ),
             ),
             const SizedBox(height: 10),
-            
             DropdownButtonFormField<String>(
               value: _neededFor1,
               dropdownColor: const Color(0xFF0A192F),
@@ -683,11 +976,9 @@ class _CreateShiftRequestDialogState extends State<_CreateShiftRequestDialog> {
                 ),
               ),
             ),
-            
             const SizedBox(height: 20),
             Divider(color: Colors.white.withOpacity(0.2)),
             const SizedBox(height: 10),
-            
             Row(
               children: [
                 Checkbox(
@@ -698,12 +989,11 @@ class _CreateShiftRequestDialogState extends State<_CreateShiftRequestDialog> {
                 const Text("Add second shift (same day)", style: TextStyle(color: Colors.white)),
               ],
             ),
-            
             if (_addSecondShift) ...[
               const SizedBox(height: 10),
-              Text("Shift 2", style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold)),
+              Text("Shift 2",
+                  style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
-              
               TextField(
                 controller: _startCtrl2,
                 readOnly: true,
@@ -732,7 +1022,6 @@ class _CreateShiftRequestDialogState extends State<_CreateShiftRequestDialog> {
                 ),
               ),
               const SizedBox(height: 10),
-              
               DropdownButtonFormField<String>(
                 value: _neededFor2,
                 dropdownColor: const Color(0xFF0A192F),
@@ -781,13 +1070,17 @@ class _CreateShiftRequestDialogState extends State<_CreateShiftRequestDialog> {
 }
 
 // =====================================================
-// DIALOG 2: ADD TO ROTA DIRECTLY (FIXED OVERFLOW & SCROLLING)
+// DIALOG 2: ADD TO ROTA DIRECTLY (with scrolling)
 // =====================================================
 class _AddToRotaDialog extends StatefulWidget {
   final String dbName;
   final String userEmail;
   final RotaService rotaService;
-  final Function({required String targetRole, required String title, required String message, String? targetEmail}) onSendPushNotification;
+  final Function(
+      {required String targetRole,
+      required String title,
+      required String message,
+      String? targetEmail}) onSendPushNotification;
 
   const _AddToRotaDialog({
     required this.dbName,
@@ -803,7 +1096,7 @@ class _AddToRotaDialog extends StatefulWidget {
 class _AddToRotaDialogState extends State<_AddToRotaDialog> {
   DateTime? _day;
   Map<String, dynamic>? _selectedEmployee;
-  
+
   final _startCtrl1 = TextEditingController();
   final _endCtrl1 = TextEditingController();
 
@@ -813,7 +1106,7 @@ class _AddToRotaDialogState extends State<_AddToRotaDialog> {
 
   bool _loading = false;
   bool _saving = false;
-  
+
   List<Map<String, dynamic>> _employees = [];
 
   @override
@@ -833,12 +1126,10 @@ class _AddToRotaDialogState extends State<_AddToRotaDialog> {
 
   Future<void> _loadEmployees() async {
     setState(() => _loading = true);
-    
     try {
       final employees = await widget.rotaService.fetchAllEmployees(
         db: widget.dbName,
       );
-      
       if (mounted) {
         setState(() {
           _employees = employees;
@@ -859,7 +1150,6 @@ class _AddToRotaDialogState extends State<_AddToRotaDialog> {
   Future<void> _pickDay() async {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    
     final picked = await showDatePicker(
       context: context,
       initialDate: today,
@@ -905,12 +1195,10 @@ class _AddToRotaDialogState extends State<_AddToRotaDialog> {
       _showError("Please select an employee");
       return;
     }
-
     if (!_validateShift(_startCtrl1.text, _endCtrl1.text)) {
       _showError("Please fill all fields for shift 1");
       return;
     }
-
     if (_addSecondShift && !_validateShift(_startCtrl2.text, _endCtrl2.text)) {
       _showError("Please fill all fields for shift 2");
       return;
@@ -920,17 +1208,26 @@ class _AddToRotaDialogState extends State<_AddToRotaDialog> {
 
     try {
       int successCount = 0;
-      
-      final weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+      final weekdays = [
+        'Monday',
+        'Tuesday',
+        'Wednesday',
+        'Thursday',
+        'Friday',
+        'Saturday',
+        'Sunday'
+      ];
       final yyyy = _day!.year.toString().padLeft(4, '0');
       final mm = _day!.month.toString().padLeft(2, '0');
       final dd = _day!.day.toString().padLeft(2, '0');
       final dayDate = "$yyyy-$mm-$dd";
       final dayName = weekdays[_day!.weekday - 1];
-      final dayLabel = "${_day!.day.toString().padLeft(2, '0')}/${_day!.month.toString().padLeft(2, '0')}/${_day!.year} ($dayName)";
+      final dayLabel =
+          "${_day!.day.toString().padLeft(2, '0')}/${_day!.month.toString().padLeft(2, '0')}/${_day!.year} ($dayName)";
 
       print('📝 Adding shift 1 for: ${_selectedEmployee!['email']} on $dayLabel');
-      
+
       final ok1 = await widget.rotaService.addShiftToRota(
         db: widget.dbName,
         userEmail: widget.userEmail,
@@ -1021,11 +1318,10 @@ class _AddToRotaDialogState extends State<_AddToRotaDialog> {
       backgroundColor: const Color(0xFF172A45),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       title: const Text("Add to Rota", style: TextStyle(color: Colors.white)),
-      // 🔴 FIXED: Proper constraints and scrolling
       content: Container(
         width: double.maxFinite,
         constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.5, // Reduced from 0.6 to 0.5
+          maxHeight: MediaQuery.of(context).size.height * 0.5,
         ),
         child: _loading
             ? const Center(child: CircularProgressIndicator(color: Color(0xFF4CC9F0)))
@@ -1047,7 +1343,8 @@ class _AddToRotaDialogState extends State<_AddToRotaDialog> {
                         child: DropdownButton<Map<String, dynamic>>(
                           value: _selectedEmployee,
                           dropdownColor: const Color(0xFF0A192F),
-                          hint: const Text("Select Employee", style: TextStyle(color: Colors.white70)),
+                          hint: const Text("Select Employee",
+                              style: TextStyle(color: Colors.white70)),
                           isExpanded: true,
                           items: _employees.map((emp) {
                             return DropdownMenuItem(
@@ -1065,7 +1362,6 @@ class _AddToRotaDialogState extends State<_AddToRotaDialog> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    
                     // Day selector
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -1076,7 +1372,8 @@ class _AddToRotaDialogState extends State<_AddToRotaDialog> {
                               _day == null
                                   ? "Select day"
                                   : "${_day!.day.toString().padLeft(2, '0')}/${_day!.month.toString().padLeft(2, '0')}/${_day!.year}",
-                              style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 16),
+                              style: TextStyle(
+                                  color: Colors.white.withOpacity(0.8), fontSize: 16),
                             ),
                           ),
                           TextButton(
@@ -1084,17 +1381,18 @@ class _AddToRotaDialogState extends State<_AddToRotaDialog> {
                             style: TextButton.styleFrom(
                               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                             ),
-                            child: const Text("Pick", style: TextStyle(color: Color(0xFF4CC9F0))),
+                            child: const Text("Pick",
+                                style: TextStyle(color: Color(0xFF4CC9F0))),
                           ),
                         ],
                       ),
                     ),
                     const SizedBox(height: 20),
-                    
                     // Shift 1
-                    Text("Shift 1", style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold)),
+                    Text("Shift 1",
+                        style:
+                            TextStyle(color: Colors.white70, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 12),
-                    
                     TextField(
                       controller: _startCtrl1,
                       readOnly: true,
@@ -1106,8 +1404,8 @@ class _AddToRotaDialogState extends State<_AddToRotaDialog> {
                         enabledBorder: UnderlineInputBorder(
                           borderSide: BorderSide(color: Colors.white.withOpacity(0.2)),
                         ),
-                        focusedBorder: UnderlineInputBorder(
-                          borderSide: const BorderSide(color: Color(0xFF4CC9F0)),
+                        focusedBorder: const UnderlineInputBorder(
+                          borderSide: BorderSide(color: Color(0xFF4CC9F0)),
                         ),
                         contentPadding: const EdgeInsets.symmetric(vertical: 8),
                       ),
@@ -1124,17 +1422,15 @@ class _AddToRotaDialogState extends State<_AddToRotaDialog> {
                         enabledBorder: UnderlineInputBorder(
                           borderSide: BorderSide(color: Colors.white.withOpacity(0.2)),
                         ),
-                        focusedBorder: UnderlineInputBorder(
-                          borderSide: const BorderSide(color: Color(0xFF4CC9F0)),
+                        focusedBorder: const UnderlineInputBorder(
+                          borderSide: BorderSide(color: Color(0xFF4CC9F0)),
                         ),
                         contentPadding: const EdgeInsets.symmetric(vertical: 8),
                       ),
                     ),
-                    
                     const SizedBox(height: 20),
                     Divider(color: Colors.white.withOpacity(0.2), height: 1),
                     const SizedBox(height: 12),
-                    
                     // Second shift option
                     Row(
                       children: [
@@ -1144,7 +1440,8 @@ class _AddToRotaDialogState extends State<_AddToRotaDialog> {
                           child: Checkbox(
                             value: _addSecondShift,
                             onChanged: _saving ? null : (v) => setState(() => _addSecondShift = v ?? false),
-                            fillColor: MaterialStateProperty.resolveWith((states) => const Color(0xFF4CC9F0)),
+                            fillColor: MaterialStateProperty.resolveWith(
+                                (states) => const Color(0xFF4CC9F0)),
                             materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                           ),
                         ),
@@ -1157,12 +1454,12 @@ class _AddToRotaDialogState extends State<_AddToRotaDialog> {
                         ),
                       ],
                     ),
-                    
                     if (_addSecondShift) ...[
                       const SizedBox(height: 16),
-                      Text("Shift 2", style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold)),
+                      Text("Shift 2",
+                          style: TextStyle(
+                              color: Colors.white70, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 12),
-                      
                       TextField(
                         controller: _startCtrl2,
                         readOnly: true,
@@ -1174,8 +1471,8 @@ class _AddToRotaDialogState extends State<_AddToRotaDialog> {
                           enabledBorder: UnderlineInputBorder(
                             borderSide: BorderSide(color: Colors.white.withOpacity(0.2)),
                           ),
-                          focusedBorder: UnderlineInputBorder(
-                            borderSide: const BorderSide(color: Color(0xFF4CC9F0)),
+                          focusedBorder: const UnderlineInputBorder(
+                            borderSide: BorderSide(color: Color(0xFF4CC9F0)),
                           ),
                           contentPadding: const EdgeInsets.symmetric(vertical: 8),
                         ),
@@ -1192,15 +1489,13 @@ class _AddToRotaDialogState extends State<_AddToRotaDialog> {
                           enabledBorder: UnderlineInputBorder(
                             borderSide: BorderSide(color: Colors.white.withOpacity(0.2)),
                           ),
-                          focusedBorder: UnderlineInputBorder(
-                            borderSide: const BorderSide(color: Color(0xFF4CC9F0)),
+                          focusedBorder: const UnderlineInputBorder(
+                            borderSide: BorderSide(color: Color(0xFF4CC9F0)),
                           ),
                           contentPadding: const EdgeInsets.symmetric(vertical: 8),
                         ),
                       ),
                     ],
-                    
-                    // Add bottom padding for better scrolling experience
                     const SizedBox(height: 16),
                   ],
                 ),

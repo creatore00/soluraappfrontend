@@ -45,7 +45,7 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   // Clock + date
   Timer? _timer;
-  Timer? _refreshTimer; // Timer per refresh automatico ogni minuto
+  Timer? _refreshTimer;
   String appBarDateText = '';
 
   // Employee
@@ -62,7 +62,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   int unreadCount = 0;
   bool loadingUnread = false;
 
-  // Welcome animation (kept, but not forcing rebuild during build)
+  // Welcome animation
   late AnimationController _welcomeController;
   late Animation<double> _welcomeAnimation;
   bool showWelcome = true;
@@ -98,19 +98,16 @@ class _DashboardScreenState extends State<DashboardScreen>
       _updateAppBarDate();
     });
 
-    // Timer per refresh automatico ogni minuto
     _refreshTimer = Timer.periodic(const Duration(minutes: 1), (_) {
       if (!mounted) return;
       _autoRefresh();
     });
 
-    // init AFTER first frame (prevents "build scheduled during frame")
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializeData();
     });
   }
 
-  // Auto refresh function
   Future<void> _autoRefresh() async {
     if (_initializing) return;
     print('🔄 Auto-refreshing dashboard...');
@@ -118,9 +115,6 @@ class _DashboardScreenState extends State<DashboardScreen>
     await _fetchWeeklyRota();
   }
 
-  // -----------------------------
-  // Safe UI error showing (NO setState during build)
-  // -----------------------------
   void _showErrorSnack(String msg) {
     if (!mounted) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -134,9 +128,6 @@ class _DashboardScreenState extends State<DashboardScreen>
     });
   }
 
-  // -----------------------------
-  // DB options + init
-  // -----------------------------
   List<DatabaseAccess> get _dbOptions {
     if (widget.databases.isNotEmpty) return widget.databases;
     if (Session.databases.isNotEmpty) return Session.databases;
@@ -173,9 +164,6 @@ class _DashboardScreenState extends State<DashboardScreen>
     });
   }
 
-  // -----------------------------
-  // Employee + profile image
-  // -----------------------------
   Future<void> _fetchEmployeeInfo() async {
     try {
       final response = await http.get(
@@ -234,13 +222,10 @@ class _DashboardScreenState extends State<DashboardScreen>
         setState(() => _profileImageBytes = bytes);
       }
     } catch (e) {
-      // don't spam user for image; silent or gentle message
+      // silent fail for image
     }
   }
 
-  // -----------------------------
-  // Notifications
-  // -----------------------------
   Future<void> _loadUnreadCount() async {
     if (loadingUnread) return;
 
@@ -251,12 +236,10 @@ class _DashboardScreenState extends State<DashboardScreen>
     setState(() => loadingUnread = true);
 
     try {
-      print('📊 Fetching unread count for role: $role, db: ${currentDb.dbName}');
       final count = await NotificationsService.fetchUnreadCount(
         db: currentDb.dbName,
         role: role,
       );
-      print('📊 Unread count response: $count');
       
       if (!mounted) return;
       setState(() => unreadCount = count);
@@ -273,8 +256,6 @@ class _DashboardScreenState extends State<DashboardScreen>
       _showErrorSnack("No role found in session.");
       return;
     }
-
-    print('📱 Opening notifications screen...');
     
     final shouldRefresh = await Navigator.push(
       context,
@@ -285,8 +266,6 @@ class _DashboardScreenState extends State<DashboardScreen>
         ),
       ),
     );
-
-    print('📱 Returned from notifications with shouldRefresh: $shouldRefresh');
     
     await _loadUnreadCount();
     
@@ -295,9 +274,6 @@ class _DashboardScreenState extends State<DashboardScreen>
     }
   }
 
-  // -----------------------------
-  // Feed
-  // -----------------------------
   Future<void> _openFeed() async {
     final String first = (employeeName ?? '').trim();
     final String displayName = first.isNotEmpty ? first : 'User';
@@ -315,9 +291,6 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
-  // -----------------------------
-  // Reminder
-  // -----------------------------
   void _checkDailyReminder() {
     final todayStr = DateFormat('dd/MM/yyyy').format(DateTime.now());
     final last = lastReminderDate != null
@@ -331,9 +304,6 @@ class _DashboardScreenState extends State<DashboardScreen>
     }
   }
 
-  // -----------------------------
-  // Switch DB
-  // -----------------------------
   Future<void> switchDatabase(DatabaseAccess db) async {
     if (!mounted) return;
 
@@ -349,9 +319,6 @@ class _DashboardScreenState extends State<DashboardScreen>
     await _initializeData();
   }
 
-  // -----------------------------
-  // Weekly rota (GET /rota)
-  // -----------------------------
   Future<void> _fetchWeeklyRota() async {
     if (loadingRota) return;
 
@@ -474,39 +441,34 @@ class _DashboardScreenState extends State<DashboardScreen>
     }
   }
 
-  // -----------------------------
-  // EDIT SCHEDULE
-  // -----------------------------
-  List<_ShiftFrame> _getTodayShiftFrames() {
-    final todayStr = DateFormat('dd/MM/yyyy').format(DateTime.now());
+  List<_ShiftFrame> _getShiftsForDay(DateTime date) {
+    final dateStr = DateFormat('dd/MM/yyyy').format(date);
     final row = weekRota.firstWhere(
-      (r) => r.dateStr == todayStr,
+      (r) => r.dateStr == dateStr,
       orElse: () => _RotaDayRow(
-        date: DateTime.now(),
-        dateStr: todayStr,
-        dayName: DateFormat('EEEE').format(DateTime.now()),
+        date: date,
+        dateStr: dateStr,
+        dayName: DateFormat('EEEE').format(date),
         shifts: const [],
       ),
     );
-
     return row.shifts
         .where((s) => (s.start.isNotEmpty || s.end.isNotEmpty))
         .toList()
       ..sort((a, b) => a.start.compareTo(b.start));
   }
 
-  bool _hasShiftToday() {
-    final todayStr = DateFormat('dd/MM/yyyy').format(DateTime.now());
+  bool _hasShiftsForDay(DateTime date) {
+    final dateStr = DateFormat('dd/MM/yyyy').format(date);
     final row = weekRota.firstWhere(
-      (r) => r.dateStr == todayStr,
+      (r) => r.dateStr == dateStr,
       orElse: () => _RotaDayRow(
-        date: DateTime.now(),
-        dateStr: todayStr,
-        dayName: DateFormat('EEEE').format(DateTime.now()),
+        date: date,
+        dateStr: dateStr,
+        dayName: DateFormat('EEEE').format(date),
         shifts: const [],
       ),
     );
-
     return row.shifts.any((s) => s.start.isNotEmpty && s.end.isNotEmpty);
   }
 
@@ -565,29 +527,27 @@ class _DashboardScreenState extends State<DashboardScreen>
     return picked;
   }
 
-  void _showEnterTimesDialog() {
-    if (!_hasShiftToday()) {
-      _showErrorSnack(
-          "You can't edit today because no shift is scheduled. Contact your manager.");
+  void _showEditDayDialog(DateTime selectedDate) {
+    if (!_hasShiftsForDay(selectedDate)) {
+      _showErrorSnack("No shifts scheduled for this day.");
       return;
     }
 
-    final now = DateTime.now();
-    final today = DateFormat('dd/MM/yyyy').format(now);
-    final dayName = DateFormat('EEEE').format(now);
-    final displayDate = '$today ($dayName)';
+    final dateStr = DateFormat('dd/MM/yyyy').format(selectedDate);
+    final dayName = DateFormat('EEEE').format(selectedDate);
+    final displayDate = '$dateStr ($dayName)';
 
-    final todayFrames = _getTodayShiftFrames();
+    final dayShifts = _getShiftsForDay(selectedDate);
 
     final startControllers = <TextEditingController>[];
     final endControllers = <TextEditingController>[];
     final entryIds = <int?>[];
 
     for (int i = 0; i < 2; i++) {
-      if (i < todayFrames.length) {
-        startControllers.add(TextEditingController(text: todayFrames[i].start));
-        endControllers.add(TextEditingController(text: todayFrames[i].end));
-        entryIds.add(todayFrames[i].id);
+      if (i < dayShifts.length) {
+        startControllers.add(TextEditingController(text: dayShifts[i].start));
+        endControllers.add(TextEditingController(text: dayShifts[i].end));
+        entryIds.add(dayShifts[i].id);
       } else {
         startControllers.add(TextEditingController());
         endControllers.add(TextEditingController());
@@ -617,7 +577,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    "Today: $displayDate",
+                    "$displayDate",
                     style: TextStyle(
                         color: Colors.white.withOpacity(0.75),
                         fontWeight: FontWeight.w500),
@@ -781,7 +741,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                     });
                   }
 
-                  await _saveRotaShifts(workPeriods);
+                  await _saveRotaShifts(selectedDate, workPeriods);
                   if (mounted) Navigator.pop(context);
                 },
                 style: ElevatedButton.styleFrom(
@@ -797,11 +757,8 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
-  Future<void> _saveRotaShifts(List<Map<String, dynamic>> timeFrames) async {
-    final now = DateTime.now();
-    final today = DateFormat('dd/MM/yyyy').format(now);
-    final dayName = DateFormat('EEEE').format(now);
-    final formattedDay = '$today ($dayName)';
+  Future<void> _saveRotaShifts(DateTime date, List<Map<String, dynamic>> timeFrames) async {
+    final formattedDay = '${DateFormat('dd/MM/yyyy').format(date)} (${DateFormat('EEEE').format(date)})';
 
     try {
       if ((employeeName ?? "").trim().isEmpty ||
@@ -868,7 +825,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         }
       }
 
-      final existing = _getTodayShiftFrames();
+      final existing = _getShiftsForDay(date);
       for (final e in existing) {
         if (e.id != null && !keptEntryIds.contains(e.id)) {
           await _deleteRotaEntry(e.id!);
@@ -881,15 +838,19 @@ class _DashboardScreenState extends State<DashboardScreen>
         SnackBar(
           content: Text(timeFrames.isNotEmpty
               ? "Schedule updated successfully!"
-              : "All shifts cleared for today!"),
+              : "All shifts cleared for ${DateFormat('EEEE').format(date)}!"),
           backgroundColor: timeFrames.isNotEmpty ? Colors.green : Colors.blue,
         ),
       );
 
-      setState(() {
-        hasScheduledShiftToday = timeFrames.isNotEmpty;
-        showClockInReminder = false;
-      });
+      // Check if today's schedule was updated
+      final today = DateTime.now();
+      if (DateFormat('dd/MM/yyyy').format(date) == DateFormat('dd/MM/yyyy').format(today)) {
+        setState(() {
+          hasScheduledShiftToday = timeFrames.isNotEmpty;
+          showClockInReminder = false;
+        });
+      }
 
       await _fetchWeeklyRota();
     } catch (e) {
@@ -920,9 +881,6 @@ class _DashboardScreenState extends State<DashboardScreen>
     }
   }
 
-  // -----------------------------
-  // Drawer + logout + settings
-  // -----------------------------
   Future<void> _showDbPicker() async {
     final options = _dbOptions;
     if (options.length <= 1) return;
@@ -1031,9 +989,6 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
-  // -----------------------------
-  // UI
-  // -----------------------------
   Widget _buildClockInReminder() {
     if (!showClockInReminder || hasScheduledShiftToday) {
       return const SizedBox();
@@ -1138,7 +1093,7 @@ class _DashboardScreenState extends State<DashboardScreen>
           const SizedBox(height: 12),
           if (!hasShifts)
             Text(
-              "No shift scheduled. You can't edit schedule.",
+              "No shift scheduled today.",
               style: TextStyle(color: Colors.white.withOpacity(0.70), fontSize: 14),
             )
           else
@@ -1189,20 +1144,6 @@ class _DashboardScreenState extends State<DashboardScreen>
                   ],
                 ),
               ],
-            ),
-          const SizedBox(height: 14),
-          if (hasShifts)
-            ElevatedButton.icon(
-              onPressed: _showEnterTimesDialog,
-              icon: const Icon(Icons.edit, size: 18),
-              label: const Text("Edit Today's Schedule"),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF4CC9F0),
-                foregroundColor: Colors.white,
-                minimumSize: const Size(double.infinity, 46),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-              ),
             ),
         ],
       ),
@@ -1272,7 +1213,6 @@ class _DashboardScreenState extends State<DashboardScreen>
                     fontWeight: FontWeight.bold),
               ),
               const Spacer(),
-              // Refresh button rimosso perché ora si aggiorna automaticamente
             ],
           ),
           const SizedBox(height: 10),
@@ -1288,6 +1228,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                 Expanded(flex: 5, child: _headerText("Day")),
                 Expanded(flex: 4, child: _headerText("Shifts")),
                 Expanded(flex: 2, child: _headerText("Total", align: TextAlign.right)),
+                Expanded(flex: 2, child: _headerText("", align: TextAlign.center)),
               ],
             ),
           ),
@@ -1305,6 +1246,8 @@ class _DashboardScreenState extends State<DashboardScreen>
 
             final totalText =
                 shiftFrames.isEmpty ? "-" : _calcTotalText(shiftFrames);
+            
+            final hasShifts = shiftFrames.isNotEmpty;
 
             return Container(
               margin: const EdgeInsets.only(bottom: 6),
@@ -1398,6 +1341,18 @@ class _DashboardScreenState extends State<DashboardScreen>
                       ),
                     ),
                   ),
+                  Expanded(
+                    flex: 2,
+                    child: hasShifts
+                        ? IconButton(
+                            icon: const Icon(Icons.edit, size: 18, color: Color(0xFF4CC9F0)),
+                            onPressed: () => _showEditDayDialog(row.date),
+                            tooltip: 'Edit ${row.dayName} schedule',
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
                 ],
               ),
             );
@@ -1465,9 +1420,6 @@ class _DashboardScreenState extends State<DashboardScreen>
     }
   }
 
-  // -----------------------------
-  // Bottom Navigation Bar
-  // -----------------------------
   Widget _buildBottomNavigationBar() {
     return Container(
       height: 70,
@@ -1620,14 +1572,11 @@ class _DashboardScreenState extends State<DashboardScreen>
   @override
   void dispose() {
     _timer?.cancel();
-    _refreshTimer?.cancel(); // Cancella il timer di refresh
+    _refreshTimer?.cancel();
     _welcomeController.dispose();
     super.dispose();
   }
 
-  // -----------------------------
-  // BUILD
-  // -----------------------------
   @override
   Widget build(BuildContext context) {
     final String first = (employeeName ?? '').trim();
@@ -1757,7 +1706,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                       ),
                       _DrawerTile(
                         icon: Icons.work_outline,
-                        title: 'Shift Requests',
+                        title: 'Shifts',
                         onTap: () {
                           Navigator.pop(context);
                           Navigator.push(
@@ -1777,7 +1726,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                         icon: Icons.calendar_month,
                         title: 'All Rota',
                         onTap: () {
-                          Navigator.pop(context); // Chiudi il drawer
+                          Navigator.pop(context);
                           Navigator.push(
                             context,
                             MaterialPageRoute(
@@ -1924,9 +1873,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 }
 
-// -----------------------------
 // Shared widgets + models
-// -----------------------------
 class _DrawerTile extends StatelessWidget {
   final IconData icon;
   final String title;

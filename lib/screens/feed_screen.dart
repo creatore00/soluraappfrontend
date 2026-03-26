@@ -3,6 +3,10 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 import '../models/feed_post.dart';
+import 'hours_summary_screen.dart';
+import 'all_rota_screen.dart';
+import 'holidays_screen.dart';
+import 'earnings_screen.dart';
 import '../services/feed_service.dart';
 import '../models/database_access.dart';
 import 'create_post_dialog.dart';
@@ -144,6 +148,206 @@ class _FeedScreenState extends State<FeedScreen> {
       return 0;
     });
     return list;
+  }
+
+  // ===========================================
+  // BOTTOM NAVIGATION BAR METHODS
+  // ===========================================
+  Widget _buildBottomNavigationBar() {
+    return Container(
+      height: 70,
+      decoration: BoxDecoration(
+        color: const Color(0xFF172A45),
+        border: Border(
+          top: BorderSide(
+            color: Colors.white.withOpacity(0.1),
+            width: 1,
+          ),
+        ),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          // Hours Button
+          _buildNavButton(
+            icon: Icons.access_time,
+            label: 'Hours',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => HoursSummaryScreen(
+                    email: widget.userEmail,
+                    selectedDb: widget.selectedDb,
+                    employeeName: widget.userName,
+                    employeeLastName: '',
+                  ),
+                ),
+              );
+            },
+          ),
+          
+          // Rota Button
+          _buildNavButton(
+            icon: Icons.calendar_today,
+            label: 'Rota',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => AllRotaScreen(
+                    email: widget.userEmail,
+                    selectedDb: widget.selectedDb,
+                  ),
+                ),
+              );
+            },
+          ),
+          
+          // Home Button (center) - larger
+          _buildHomeButton(),
+          
+          // Holidays Button
+          _buildNavButton(
+            icon: Icons.beach_access,
+            label: 'Holidays',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => HolidaysScreen(
+                    email: widget.userEmail,
+                    selectedDb: widget.selectedDb,
+                  ),
+                ),
+              );
+            },
+          ),
+          
+          // Earnings Button - Active (since we're on Feed screen)
+          _buildActiveNavButton(
+            icon: Icons.dynamic_feed,
+            label: 'Feed',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNavButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return Expanded(
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          child: SizedBox(
+            height: 70,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  icon,
+                  color: Colors.white.withOpacity(0.7),
+                  size: 24,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.white.withOpacity(0.7),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActiveNavButton({
+    required IconData icon,
+    required String label,
+  }) {
+    return Expanded(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: const Color(0xFF4CC9F0).withOpacity(0.2),
+            ),
+            child: Icon(
+              icon,
+              color: const Color(0xFF4CC9F0),
+              size: 24,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              color: Color(0xFF4CC9F0),
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHomeButton() {
+    return Expanded(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 50,
+            height: 50,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: const LinearGradient(
+                colors: [
+                  Color(0xFF4CC9F0),
+                  Color(0xFF1E3A5F),
+                ],
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.3),
+                  blurRadius: 8,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: IconButton(
+              icon: const Icon(Icons.home, size: 28),
+              color: Colors.white,
+              onPressed: () {
+                Navigator.of(context).popUntil((route) => route.isFirst);
+              },
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            'Home',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.white.withOpacity(0.7),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   // ===========================================
@@ -914,120 +1118,112 @@ class _FeedScreenState extends State<FeedScreen> {
   // ===========================================
   // BUILD
   // ===========================================
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF0A192F),
-      appBar: AppBar(
-        title: const Text(
-          'Feed',
-          style: TextStyle(
-            fontSize: 26,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-            letterSpacing: -0.5,
-          ),
+@override
+Widget build(BuildContext context) {
+  return Scaffold(
+    backgroundColor: const Color(0xFF0A192F),
+    appBar: AppBar(
+      title: const Text(
+        'Feed',
+        style: TextStyle(
+          fontSize: 26,
+          fontWeight: FontWeight.bold,
+          color: Colors.white,
+          letterSpacing: -0.5,
         ),
-        backgroundColor: const Color(0xFF172A45),
-        elevation: 0,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh, color: Color(0xFF4CC9F0)),
-            onPressed: _refreshPosts,
-          ),
-        ],
       ),
-      body: RefreshIndicator(
-        onRefresh: _refreshPosts,
-        backgroundColor: const Color(0xFF172A45),
-        color: const Color(0xFF4CC9F0),
-        child: ListView.builder(
-          controller: _scrollController,
-          padding: const EdgeInsets.all(16),
-          itemCount: _posts.length + 1,
-          itemBuilder: (context, index) {
-            if (index == _posts.length) {
-              if (_loading) {
-                return const Padding(
-                  padding: EdgeInsets.all(32),
-                  child: Center(
-                    child: CircularProgressIndicator(
-                      color: Color(0xFF4CC9F0),
-                      strokeWidth: 2,
-                    ),
-                  ),
-                );
-              }
-              if (_hasMore) return const SizedBox(height: 20);
-
-              return Padding(
-                padding: const EdgeInsets.all(32),
+      backgroundColor: const Color(0xFF172A45),
+      elevation: 0,
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.refresh, color: Color(0xFF4CC9F0)),
+          onPressed: _refreshPosts,
+        ),
+      ],
+    ),
+    body: RefreshIndicator(
+      onRefresh: _refreshPosts,
+      backgroundColor: const Color(0xFF172A45),
+      color: const Color(0xFF4CC9F0),
+      child: ListView.builder(
+        controller: _scrollController,
+        padding: const EdgeInsets.all(16),
+        itemCount: _posts.length + 1,
+        itemBuilder: (context, index) {
+          if (index == _posts.length) {
+            if (_loading) {
+              return const Padding(
+                padding: EdgeInsets.all(32),
                 child: Center(
-                  child: Column(
-                    children: [
-                      Icon(Icons.celebration,
-                          size: 48, color: Colors.white.withOpacity(0.12)),
-                      const SizedBox(height: 16),
-                      Text(
-                        'You\'re all caught up!',
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.55),
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Check back later for new posts',
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.35),
-                          fontSize: 14,
-                        ),
-                      ),
-                    ],
+                  child: CircularProgressIndicator(
+                    color: Color(0xFF4CC9F0),
+                    strokeWidth: 2,
                   ),
                 ),
               );
             }
+            if (_hasMore) return const SizedBox(height: 20);
 
-            final post = _posts[index];
-
-            return PostCard(
-              key: ValueKey(post.id),
-              post: post,
-
-              // ✅ NEW
-              canManagePost: _isAmOrManager,
-              onMenu: () => _openPostMenu(post),
-
-              onLike: () => _toggleLike(post),
-              onDoubleTap: () => _handleDoubleTap(post),
-              onComment: () => _openComments(post),
-              onShowLikes: () => _showLikesSheet(post),
-              onShowVotes: post.poll == null ? null : () => _showPollVotesSheet(post.poll!),
-              onVote: (optionId) => _handleVote(post, optionId),
-              getColorForDesignation: _getColorForDesignation,
-              formatDateTime: _formatDateTime,
+            return Padding(
+              padding: const EdgeInsets.all(32),
+              child: Center(
+                child: Column(
+                  children: [
+                    Icon(Icons.celebration,
+                        size: 48, color: Colors.white.withOpacity(0.12)),
+                    const SizedBox(height: 16),
+                    Text(
+                      'You\'re all caught up!',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.55),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Check back later for new posts',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.35),
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             );
-          },
-        ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _showCreatePostDialog,
-        backgroundColor: const Color(0xFF4CC9F0),
-        foregroundColor: Colors.white,
-        elevation: 4,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: const Icon(Icons.add, size: 28),
-      ),
-    );
-  }
+          }
 
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
+          final post = _posts[index];
+
+          return PostCard(
+            key: ValueKey(post.id),
+            post: post,
+            canManagePost: _isAmOrManager,
+            onMenu: () => _openPostMenu(post),
+            onLike: () => _toggleLike(post),
+            onDoubleTap: () => _handleDoubleTap(post),
+            onComment: () => _openComments(post),
+            onShowLikes: () => _showLikesSheet(post),
+            onShowVotes: post.poll == null ? null : () => _showPollVotesSheet(post.poll!),
+            onVote: (optionId) => _handleVote(post, optionId),
+            getColorForDesignation: _getColorForDesignation,
+            formatDateTime: _formatDateTime,
+          );
+        },
+      ),
+    ),
+    floatingActionButton: FloatingActionButton(
+      onPressed: _showCreatePostDialog,
+      backgroundColor: const Color(0xFF4CC9F0),
+      foregroundColor: Colors.white,
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: const Icon(Icons.add, size: 28),
+    ),
+    bottomNavigationBar: _buildBottomNavigationBar(),
+  );
+}
 }
 
 // ===========================================

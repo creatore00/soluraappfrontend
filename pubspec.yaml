@@ -3,7 +3,7 @@ description: "A new Flutter project."
 
 publish_to: 'none'
 
-version: 1.0.0+1
+version: 1.0.1+1
 
 environment:
   sdk: ^3.10.7
@@ -24,10 +24,12 @@ dependencies:
   image_picker: ^1.0.7
   flutter_local_notifications: ^17.2.4
   timezone: ^0.9.4
-  firebase_core: ^2.15.1
-  firebase_messaging: ^14.6.5
+  firebase_core: ^3.15.2
+  firebase_messaging: ^15.1.5
   url_launcher: ^6.2.4  # Add this line
-  
+  path_provider: ^2.1.1
+  open_file: ^3.3.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
